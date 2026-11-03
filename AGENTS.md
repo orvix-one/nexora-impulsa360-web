@@ -3,8 +3,9 @@
 ## Project shape
 
 - Vue 3.5 + Vite 6 SPA in JS (no TS) with vue-router. UI and copy in Spanish (Bolivia, `America/La_Paz`). Views in `src/pages` and `src/components`, shared logic in `src/lib`.
+- HTTP: client calls only via `src/lib/api.js` (`apiRequest`); server auth only via `authenticate`/`requireAdmin` (Bearer + `getClaims`).
 - API: Express 5 in `server/app.js`, deployed as one Vercel function (`api/index.js`, `/api/*` rewrite, region `gru1`, next to Supabase). Locally: `npm run dev:api` + `npm run dev`.
-- Supabase backend. The API uses the service-role key, so RLS does not apply: scope access by hand. Portal roles: `administrador`, `lider`, `banco`.
+- Supabase backend. The API uses the service-role key, so RLS does not apply: scope access by hand. Portal roles: `administrador`, `lider`, `banco`; admin = `req.user.isAdmin` (`roles` includes `administrador`).
 - The mobile app (`../impulsa360`) writes to the same database.
 
 ## Commands

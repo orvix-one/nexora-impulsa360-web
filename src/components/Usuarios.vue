@@ -1,12 +1,11 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { adminApiRequest } from '../lib/adminApiClient'
+import { apiRequest } from '../lib/api'
 import { useAuth } from '../lib/authStore'
 import { notifyError, notifySuccess, notifyWarning, requestConfirmation, requestPasswordConfirmation } from '../lib/feedback'
 import { containsNormalized, isValidEmail, normalizeEmail } from '../lib/textUtils'
 import { deduplicarPlazas, deduplicarPlazasCatalogo, mismaPlaza } from '../lib/plazas'
 
-const apiBaseUrl = (import.meta.env.VITE_ADMIN_API_URL ?? '/api').replace(/\/$/, '')
 const roles = ['activador', 'lider', 'facturador', 'administrador', 'banco']
 const estados = ['activo', 'inhabilitado']
 const tiposZonaTemporal = [
@@ -16,7 +15,7 @@ const tiposZonaTemporal = [
   { value: 'campana', label: 'Campaña' },
   { value: 'punto_temporal', label: 'Punto temporal' },
 ]
-const { session, isAdmin } = useAuth()
+const { isAdmin } = useAuth()
 const usuarios = ref([])
 const loading = ref(false)
 const procesando = ref(false)
@@ -60,9 +59,6 @@ const usuariosFiltrados = computed(() => usuarios.value.filter((u) => {
     coincideEquipo
 }))
 
-function requestAdmin(path, options = {}) {
-  return adminApiRequest({ baseUrl: apiBaseUrl, path, token: session.value?.access_token, ...options })
-}
 function getErrorMessage(error) { return error instanceof Error && error.message ? error.message : 'Se produjo un error inesperado.' }
 function etiqueta(valor) { return valor ? valor.charAt(0).toUpperCase() + valor.slice(1) : 'Sin asignar' }
 function normalizarRol(value) { return String(value ?? '').trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase() || 'activador' }
@@ -116,8 +112,8 @@ async function cargarUsuarios() {
   loading.value = true; errorMsg.value = null
   try {
     const [result, org] = await Promise.all([
-      requestAdmin('/admin/users'),
-      requestAdmin('/admin/organization-options'),
+      apiRequest('/admin/users'),
+      apiRequest('/admin/organization-options'),
     ])
     usuarios.value = result.users ?? []
     organizacion.value = org
@@ -154,7 +150,7 @@ async function registrarUsuario() {
   if (mensaje) { notifyWarning(mensaje); return }
   procesando.value = true
   try {
-    await requestAdmin('/admin/users', { method: 'POST', body: { ...payloadUsuario(nuevo.value), password: nuevo.value.password } })
+    await apiRequest('/admin/users', { method: 'POST', body: { ...payloadUsuario(nuevo.value), password: nuevo.value.password } })
     nuevo.value = { email: '', password: '', nombre: '', plaza: '', plaza_id: '', equipo_id: '', equipo_ids: [], facturador_equipo_ids: [], rol: 'activador', roles: ['activador'], estado: 'activo', lider_id: '', motivo_inhabilitacion: '', puede_activar: false }
     await cargarUsuarios(); notifySuccess('Usuario registrado correctamente.')
   } catch (error) { notifyError(getErrorMessage(error)) }
@@ -174,7 +170,7 @@ async function guardarEdicion() {
   const payload = payloadUsuario(edicion.value)
   if (edicion.value.password) payload.password = edicion.value.password
   try {
-    await requestAdmin(`/admin/users/${editandoId.value}`, { method: 'PATCH', body: payload })
+    await apiRequest(`/admin/users/${editandoId.value}`, { method: 'PATCH', body: payload })
     cancelarEdicion(); await cargarUsuarios(); notifySuccess('Usuario actualizado correctamente.')
   } catch (error) { notifyError(getErrorMessage(error)) }
   finally { procesando.value = false }
@@ -186,7 +182,7 @@ async function confirmarInhabilitacion() {
   if (!motivo) { notifyWarning('El motivo de inhabilitacion es obligatorio.'); return }
   procesando.value = true
   try {
-    await requestAdmin(`/admin/users/${usuarioAInhabilitar.value.usuario_id}/status`, { method: 'PATCH', body: { estado: 'inhabilitado', motivo_inhabilitacion: motivo } })
+    await apiRequest(`/admin/users/${usuarioAInhabilitar.value.usuario_id}/status`, { method: 'PATCH', body: { estado: 'inhabilitado', motivo_inhabilitacion: motivo } })
     modalInhabilitar.value = false; usuarioAInhabilitar.value = null; motivoInhabilitar.value = ''
     await cargarUsuarios(); notifySuccess('Usuario inhabilitado correctamente.')
   } catch (error) { notifyError(getErrorMessage(error)) }
@@ -197,7 +193,7 @@ async function activarUsuario(usuario) {
   if (!aceptado) return
   procesando.value = true
   try {
-    await requestAdmin(`/admin/users/${usuario.usuario_id}/status`, { method: 'PATCH', body: { estado: 'activo' } })
+    await apiRequest(`/admin/users/${usuario.usuario_id}/status`, { method: 'PATCH', body: { estado: 'activo' } })
     await cargarUsuarios(); notifySuccess('Usuario activado correctamente.')
   } catch (error) { notifyError(getErrorMessage(error)) }
   finally { procesando.value = false }
@@ -206,7 +202,7 @@ async function eliminarCuenta(usuario) {
   const password = await requestPasswordConfirmation({ title: 'Eliminar cuenta', message: 'Se eliminara permanentemente la cuenta de acceso de este usuario. El historial del usuario se conservara. Ingresa tu contrasena actual para confirmar.', confirmLabel: 'Eliminar cuenta' })
   if (!password) return
   procesando.value = true
-  try { const result = await requestAdmin(`/admin/users/${usuario.usuario_id}`, { method: 'DELETE', body: { password } }); await cargarUsuarios(); notifySuccess(result.message ?? 'Cuenta de acceso eliminada correctamente.') }
+  try { const result = await apiRequest(`/admin/users/${usuario.usuario_id}`, { method: 'DELETE', body: { password } }); await cargarUsuarios(); notifySuccess(result.message ?? 'Cuenta de acceso eliminada correctamente.') }
   catch (error) { notifyError(error?.status === 409 && error.message && !error.message.startsWith('Error HTTP') ? error.message : getErrorMessage(error)) }
   finally { procesando.value = false }
 }
@@ -221,7 +217,7 @@ async function cambiarPlazaTemporal(usuario, event) {
   if (enabled) { abrirPlazaTemporal(usuario); return }
   procesando.value = true
   try {
-    await requestAdmin(`/admin/users/${usuario.usuario_id}/temporary-plaza`, { method: 'DELETE' })
+    await apiRequest(`/admin/users/${usuario.usuario_id}/temporary-plaza`, { method: 'DELETE' })
     await cargarUsuarios(); notifySuccess('Plaza temporal cancelada; vuelve a la plaza base.')
   } catch (error) { notifyError(getErrorMessage(error)) }
   finally { procesando.value = false }
@@ -233,7 +229,7 @@ async function guardarPlazaTemporal() {
   }
   procesando.value = true
   try {
-    await requestAdmin(`/admin/users/${usuarioPlazaTemporal.value.usuario_id}/temporary-plaza`, {
+    await apiRequest(`/admin/users/${usuarioPlazaTemporal.value.usuario_id}/temporary-plaza`, {
       method: 'POST', body: { ...form, inicio: new Date(form.inicio).toISOString(), fin: new Date(form.fin).toISOString() },
     })
     usuarioPlazaTemporal.value = null; await cargarUsuarios(); notifySuccess('Plaza temporal programada correctamente.')
@@ -249,7 +245,7 @@ async function guardarZonaEvento() {
   try {
     const body = { ...form, inicio: new Date(form.inicio).toISOString(), fin: new Date(form.fin).toISOString() }
     for (const activadorId of form.activador_ids) {
-      await requestAdmin(`/admin/users/${activadorId}/temporary-plaza`, { method: 'POST', body })
+      await apiRequest(`/admin/users/${activadorId}/temporary-plaza`, { method: 'POST', body })
     }
     zonaEventoForm.value = { plaza_temporal: '', tipo_zona: 'evento', ciudad_plaza: '', inicio: '', fin: '', motivo: '', activo: true, activador_ids: [] }
     await cargarUsuarios(); notifySuccess('Zona/evento asignado correctamente.')

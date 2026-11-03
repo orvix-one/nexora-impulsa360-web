@@ -19,22 +19,27 @@ const routes = [
   {
     path: '/usuarios',
     component: () => import('./components/Usuarios.vue'),
+    meta: { admin: true },
   },
   {
     path: '/equipos',
     component: () => import('./components/Equipos.vue'),
+    meta: { admin: true },
   },
   {
     path: '/plazas',
     component: () => import('./pages/PlazasPage.vue'),
+    meta: { admin: true },
   },
   {
     path: '/notificaciones',
     component: () => import('./components/Notificaciones.vue'),
+    meta: { admin: true },
   },
   {
     path: '/capacidad',
     component: () => import('./components/Capacidad.vue'),
+    meta: { admin: true },
   },
 ]
 
@@ -45,10 +50,9 @@ export const router = createRouter({
 
 router.beforeEach(async (to) => {
   await initializeAuth()
-  const { session, profile } = useAuth()
+  const { profile, isAdmin } = useAuth()
   if (to.meta.public) return profile.value ? '/activaciones' : true
-  if (!session.value || !profile.value) return { path: '/login', query: { redirect: to.fullPath } }
-  if (profile.value.rol === 'lider' && ['/usuarios', '/equipos', '/notificaciones', '/capacidad', '/plazas'].includes(to.path)) return '/activaciones'
-  if (profile.value.rol === 'banco' && ['/usuarios', '/equipos', '/notificaciones', '/capacidad', '/plazas'].includes(to.path)) return '/activaciones'
+  if (!profile.value) return { path: '/login', query: { redirect: to.fullPath } }
+  if (to.meta.admin && !isAdmin.value) return '/activaciones'
   return true
 })

@@ -29,8 +29,6 @@ Variables backend (API admin):
 
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
-- `ADMIN_BASIC_USER`
-- `ADMIN_BASIC_PASS`
 - `ADMIN_API_PORT` (opcional, por defecto `8787`)
 - `ADMIN_API_CORS_ORIGIN` (opcional, por defecto `http://localhost:5173,http://localhost:5174`)
 - `ADMIN_STORAGE_BUCKET_ACTIVACIONES` (opcional, por defecto usa `VITE_STORAGE_BUCKET_ACTIVACIONES` o `fotos-activaciones`)
@@ -78,15 +76,15 @@ npm run build
 ## Endpoints API admin
 
 - `GET /healthz`
-- `GET /admin/healthz` (requiere Basic Auth)
-- `GET /admin/users` (requiere Basic Auth)
-- `POST /admin/users` (requiere Basic Auth)
-- `PATCH /admin/users/:userId` (requiere Basic Auth, acepta `email` y `password` opcionales)
-- `DELETE /admin/users/:userId` (requiere Basic Auth)
-- `DELETE /admin/activaciones/:activacionId` (requiere Basic Auth, elimina registro y foto asociada)
-- `GET /admin/storage/summary` (requiere Basic Auth, resumen de uso de bucket y BD)
-- `GET /admin/notifications` (requiere Basic Auth)
-- `POST /admin/notifications` (requiere Basic Auth)
+- `GET /admin/healthz` (requiere Bearer de administrador)
+- `GET /admin/users` (requiere Bearer de administrador)
+- `POST /admin/users` (requiere Bearer de administrador)
+- `PATCH /admin/users/:userId` (requiere Bearer de administrador, acepta `email` y `password` opcionales)
+- `DELETE /admin/users/:userId` (requiere Bearer de administrador)
+- `DELETE /admin/activaciones/:activacionId` (requiere Bearer de administrador, elimina registro y foto asociada)
+- `GET /admin/storage/summary` (requiere Bearer de administrador, resumen de uso de bucket y BD)
+- `GET /admin/notifications` (requiere Bearer de administrador)
+- `POST /admin/notifications` (requiere Bearer de administrador)
 
 En Vercel (API serverless) se exponen con prefijo `/api`:
 
@@ -163,7 +161,7 @@ limit 5;
 ### Etapa 1.1 (validacion funcional web)
 
 1. En la web, entra a `/notificaciones`.
-2. Conecta API admin con Basic Auth.
+2. Inicia sesion como administrador.
 3. Envia una notificacion de prueba a `Todos`.
 4. Confirma en SQL:
 
@@ -190,8 +188,6 @@ No requiere cambios extra de backend para el modulo web.
    - `VITE_STORAGE_BUCKET_ACTIVACIONES` (opcional)
    - `SUPABASE_URL`
    - `SUPABASE_SERVICE_ROLE_KEY`
-   - `ADMIN_BASIC_USER`
-   - `ADMIN_BASIC_PASS`
    - `ADMIN_API_CORS_ORIGIN` (ej: `https://tu-dominio.com,https://*.vercel.app`)
    - `ADMIN_STORAGE_BUCKET_ACTIVACIONES` (opcional)
    - `ADMIN_STORAGE_LIMIT_MB` (opcional, ejemplo `1024`, por defecto Free)

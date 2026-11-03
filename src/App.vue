@@ -1,9 +1,12 @@
 <script setup>
+import { watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import FeedbackCenter from './components/FeedbackCenter.vue'
 import { signOut, useAuth } from './lib/authStore'
 const route = useRoute(), router = useRouter(), { profile, loading, isAdmin } = useAuth()
-async function logout() { await signOut(); await router.replace('/login') }
+watch(profile, (value) => {
+  if (!value && !loading.value && !route.meta.public) router.replace({ path: '/login', query: { redirect: route.fullPath } })
+})
 </script>
 <template>
   <div v-if="loading" class="auth-loading">Validando sesión...</div>
@@ -34,7 +37,7 @@ async function logout() { await signOut(); await router.replace('/login') }
       </nav>
       <div v-if="profile" class="topbar-zone session-user">
         <div class="session-copy"><span>{{ profile.nombre || profile.email }}</span><small>{{ profile.rol }}</small></div>
-        <button class="boton" @click="logout">Cerrar sesión</button>
+        <button class="boton" @click="signOut">Cerrar sesión</button>
       </div>
     </header>
     <main class="content-shell"><router-view /></main>

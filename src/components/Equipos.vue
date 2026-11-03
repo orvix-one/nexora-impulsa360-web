@@ -1,12 +1,9 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { adminApiRequest } from '../lib/adminApiClient'
-import { useAuth } from '../lib/authStore'
+import { apiRequest } from '../lib/api'
 import { notifyError, notifySuccess, notifyWarning, requestPasswordConfirmation } from '../lib/feedback'
 import { deduplicarPlazasCatalogo } from '../lib/plazas'
 
-const apiBaseUrl = (import.meta.env.VITE_ADMIN_API_URL ?? '/api').replace(/\/$/, '')
-const { session } = useAuth()
 const catalogo = ref({ available: false, message: '', equipos: [], plazas: [], facturadores: [] })
 const usuarios = ref([])
 const loading = ref(false)
@@ -22,9 +19,6 @@ const usuariosPorId = computed(() => Object.fromEntries(usuarios.value.map((u) =
 const plazasPorId = computed(() => Object.fromEntries(plazasCatalogo.value.map((p) => [p.id, p])))
 const facturadoresPorId = computed(() => Object.fromEntries((catalogo.value.facturadores ?? []).map((f) => [f.id, f])))
 
-function request(path, options = {}) {
-  return adminApiRequest({ baseUrl: apiBaseUrl, path, token: session.value?.access_token, ...options })
-}
 function errorMessage(error) { return error instanceof Error ? error.message : 'Error inesperado.' }
 function normalizarRol(value) { return String(value ?? '').trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase() }
 function rolesUsuario(usuario) { return Array.isArray(usuario?.roles) ? usuario.roles.map(normalizarRol) : [normalizarRol(usuario?.rol)] }
@@ -39,7 +33,7 @@ function numeroDuplicado(value, exceptoId = null) {
 async function cargar() {
   loading.value = true
   try {
-    const [teams, users] = await Promise.all([request('/admin/teams'), request('/admin/users')])
+    const [teams, users] = await Promise.all([apiRequest('/admin/teams'), apiRequest('/admin/users')])
     catalogo.value = teams
     usuarios.value = users.users ?? []
   } catch (error) { notifyError(errorMessage(error)) }
@@ -58,7 +52,7 @@ async function crear() {
   }
   procesando.value = true
   try {
-    await request('/admin/teams', { method: 'POST', body: nuevo.value })
+    await apiRequest('/admin/teams', { method: 'POST', body: nuevo.value })
     nuevo.value = { numero: '', plaza_id: '', lider_id: '' }
     await cargar(); notifySuccess('Equipo creado correctamente.')
   } catch (error) { notifyError(errorMessage(error)) }
@@ -85,7 +79,7 @@ async function guardar(team) {
   }
   procesando.value = true
   try {
-    await request(`/admin/teams/${team.id}`, { method: 'PATCH', body: edicion.value })
+    await apiRequest(`/admin/teams/${team.id}`, { method: 'PATCH', body: edicion.value })
     cancelar(); await cargar(); notifySuccess('Equipo actualizado correctamente.')
   } catch (error) { notifyError(errorMessage(error)) }
   finally { procesando.value = false }
@@ -93,7 +87,7 @@ async function guardar(team) {
 async function cambiarEstado(team) {
   procesando.value = true
   try {
-    await request(`/admin/teams/${team.id}`, { method: 'PATCH', body: {
+    await apiRequest(`/admin/teams/${team.id}`, { method: 'PATCH', body: {
       numero: team.numero, nombre: team.nombre, plaza_id: team.plaza_id,
       facturador_id: team.facturador_id ?? null, lider_id: team.lider_actual_id, activo: !team.activo,
     } })
@@ -103,7 +97,7 @@ async function cambiarEstado(team) {
 }
 async function verDetalle(team) {
   try {
-    const result = await request(`/admin/teams/${team.id}`)
+    const result = await apiRequest(`/admin/teams/${team.id}`)
     detalle.value = { team, ...result }
   } catch (error) { notifyError(errorMessage(error)) }
 }
@@ -113,7 +107,7 @@ async function eliminarEquipo(team) {
   if (!password) return
   procesando.value = true
   try {
-    const result = await request(`/admin/teams/${team.id}`, { method: 'DELETE', body: { password } })
+    const result = await apiRequest(`/admin/teams/${team.id}`, { method: 'DELETE', body: { password } })
     await cargar()
     notifySuccess(result.message ?? (result.deleted ? 'Equipo eliminado.' : 'Equipo inactivado.'))
   } catch (error) { notifyError(error?.status === 409 ? (error.message && !error.message.startsWith('Error HTTP') ? error.message : 'No se puede eliminar este registro porque tiene información relacionada. Puede deshabilitarlo para conservar el historial.') : errorMessage(error)) }

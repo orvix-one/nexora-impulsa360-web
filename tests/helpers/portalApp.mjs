@@ -141,8 +141,6 @@ export function tokensFor() {
 export const TEST_ENV = {
   SUPABASE_URL: 'http://supabase.test',
   SUPABASE_SERVICE_ROLE_KEY: 'service-role-test',
-  ADMIN_BASIC_USER: 'admin',
-  ADMIN_BASIC_PASS: 'pass',
   EVIDENCE_LINK_SECRET: 'secreto-de-prueba',
   EVIDENCE_PUBLIC_BASE_URL: 'https://portal.test/api',
 }
@@ -160,5 +158,5 @@ export async function startPortal(tables = seedTables(), appOptions = {}) {
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     body: JSON.stringify(body),
   })
-  return { supabase, get, post, close: () => new Promise((resolve) => server.close(resolve)) }
+  return { supabase, base, get, post, close: () => new Promise((resolve) => server.close(resolve)) }
 }

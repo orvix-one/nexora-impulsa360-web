@@ -1,12 +1,10 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { adminApiRequest } from '../lib/adminApiClient'
+import { apiRequest } from '../lib/api'
 import { useAuth } from '../lib/authStore'
 import { notifyError } from '../lib/feedback'
 
-const apiBaseUrl = (import.meta.env.VITE_ADMIN_API_URL ?? '/api').replace(/\/$/, '')
-
-const { session, isAdmin } = useAuth()
+const { isAdmin } = useAuth()
 const accessError = ref(null)
 const loadingSummary = ref(false)
 const summary = ref(null)
@@ -186,15 +184,6 @@ function getErrorMessage(error) {
   return 'Se produjo un error inesperado.'
 }
 
-async function requestAdmin(path, options = {}) {
-  return adminApiRequest({
-    baseUrl: apiBaseUrl,
-    path,
-    token: session.value?.access_token,
-    ...options,
-  })
-}
-
 async function cargarResumen() {
   if (!isAdmin.value || loadingSummary.value) {
     return
@@ -204,7 +193,7 @@ async function cargarResumen() {
   accessError.value = null
 
   try {
-    const result = await requestAdmin('/admin/storage/summary')
+    const result = await apiRequest('/admin/storage/summary')
     summary.value = result.summary ?? null
     lastUpdated.value = new Date()
   } catch (error) {

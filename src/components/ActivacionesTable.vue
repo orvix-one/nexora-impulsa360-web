@@ -1,7 +1,7 @@
 <script setup>
 import { computed, ref, onBeforeUnmount, onMounted, watch } from 'vue'
-import { adminApiRequest } from '../lib/adminApiClient'
-import { fetchActivacionDetalle, fetchActivacionesExportacion } from '../lib/activacionesService'
+import { apiRequest, apiUrl } from '../lib/api'
+import { fetchActivacionDetalle, fetchActivacionesExportacion, fetchExcelExport } from '../lib/activacionesService'
 import {
   notifyError,
   notifyInfo,
@@ -41,7 +41,6 @@ const props = defineProps({
 })
 const emit = defineEmits(['activacion-eliminada', 'activacion-actualizada', 'filtrar', 'cambiar-pagina'])
 
-const apiBaseUrl = (import.meta.env.VITE_ADMIN_API_URL ?? '/api').replace(/\/$/, '')
 const boliviaDateTimeFormatter = new Intl.DateTimeFormat('es-BO', {
   dateStyle: 'short',
   timeStyle: 'medium',
@@ -73,20 +72,13 @@ const inputFotoCashIn = ref(null)
 const formularioEdicion = ref({})
 const formularioEdicionInicial = ref({})
 const motivoEdicion = ref('')
-const { session, profile, isAdmin } = useAuth()
-const canAdminister = isAdmin
-const hasAdminRole = computed(() =>
-  profile.value?.rol === 'administrador' || profile.value?.roles?.includes('administrador')
-)
-const canEditActivaciones = computed(() =>
-  Boolean(session.value?.access_token && hasAdminRole.value)
-)
+const { isAdmin } = useAuth()
 
 const opcionesOrg = ref({ available: false, plazas: [] })
 
 async function cargarOpcionesOrg() {
   try {
-    const result = await requestAdmin('/admin/organization-options')
+    const result = await apiRequest('/admin/organization-options')
     opcionesOrg.value = result
   } catch {
     // no bloquear la edición si falla
@@ -94,7 +86,7 @@ async function cargarOpcionesOrg() {
   }
 }
 
-onMounted(() => { if (canEditActivaciones.value) cargarOpcionesOrg() })
+onMounted(() => { if (isAdmin.value) cargarOpcionesOrg() })
 
 function getCiudadActivacion(activacion) {
   return etiquetaCiudadActivacion(activacion)
@@ -162,13 +154,7 @@ function getFotoUrl(fotoUrl, signedUrl = '') {
 }
 
 function absoluteEvidenceUrl(relativePath) {
-  if (!relativePath) {
-    return ''
-  }
-
-  const base = String(apiBaseUrl || '/api').replace(/\/$/, '')
-  const root = /^https?:\/\//i.test(base) ? base : `${window.location.origin}${base.startsWith('/') ? '' : '/'}${base}`
-  return `${root}${relativePath.startsWith('/') ? '' : '/'}${relativePath}`
+  return relativePath ? apiUrl(relativePath) : ''
 }
 
 function evidenciaHyperlinkCell(relativePath) {
@@ -519,7 +505,7 @@ function seleccionarFoto(tipo, event) {
 }
 
 async function reemplazarFoto(tipo) {
-  if (!canEditActivaciones.value || !isAdmin.value) {
+  if (!isAdmin.value) {
     notifyWarning('Sesion administrativa requerida.')
     return
   }
@@ -532,16 +518,11 @@ async function reemplazarFoto(tipo) {
 
   reemplazandoFoto.value = tipo
   try {
-    const response = await fetch(`${apiBaseUrl}/admin/activaciones/${encodeURIComponent(activationId)}/fotos/${tipo}`, {
+    const payload = await apiRequest(`/admin/activaciones/${encodeURIComponent(activationId)}/fotos/${tipo}`, {
       method: 'PUT',
-      headers: {
-        Authorization: `Bearer ${session.value.access_token}`,
-        'Content-Type': file.type,
-      },
+      headers: { 'Content-Type': file.type },
       body: file,
     })
-    const payload = await response.json().catch(() => null)
-    if (!response.ok) throw new Error(payload?.error || `Error HTTP ${response.status}`)
     activacionSeleccionada.value = payload.activation
     emit('activacion-actualizada', { activation: payload.activation })
     limpiarFotosSeleccionadas()
@@ -615,13 +596,13 @@ async function guardarEdicion() {
   const validationError = validarEdicion()
   if (validationError) { notifyWarning(validationError); return }
   const activationId = normalizeText(activacionSeleccionada.value?.id)
-  if (!activationId || !canEditActivaciones.value) {
-    notifyWarning(!activationId ? 'La activacion no tiene ID.' : 'Conecta la API admin para editar activaciones.')
+  if (!activationId || !isAdmin.value) {
+    notifyWarning(!activationId ? 'La activacion no tiene ID.' : 'Sesion administrativa requerida.')
     return
   }
   guardandoEdicion.value = true
   try {
-    const result = await requestAdmin(`/admin/activaciones/${encodeURIComponent(activationId)}`, {
+    const result = await apiRequest(`/admin/activaciones/${encodeURIComponent(activationId)}`, {
       method: 'PATCH',
       body: {
         changes: construirCambiosEdicion(),
@@ -640,17 +621,8 @@ async function guardarEdicion() {
   finally { guardandoEdicion.value = false }
 }
 
-async function requestAdmin(path, options = {}) {
-  return adminApiRequest({
-    baseUrl: apiBaseUrl,
-    path,
-    token: session.value?.access_token,
-    ...options,
-  })
-}
-
 async function eliminarActivacion(activacion) {
-  if (!canEditActivaciones.value) {
+  if (!isAdmin.value) {
     notifyWarning('Sesion administrativa requerida.')
     return
   }
@@ -671,7 +643,7 @@ async function eliminarActivacion(activacion) {
   deletingActivationId.value = activacionId
 
   try {
-    const result = await requestAdmin(`/admin/activaciones/${encodeURIComponent(activacionId)}`, {
+    const result = await apiRequest(`/admin/activaciones/${encodeURIComponent(activacionId)}`, {
       method: 'DELETE',
       body: { password },
     })
@@ -844,24 +816,7 @@ async function exportarACsv() {
 async function exportarAExcelConImagenes() {
   exportandoExcel.value = true
   try {
-    const params = new URLSearchParams()
-    if (filtroPlaza.value) params.set('plaza', filtroPlaza.value)
-    if (filtroDistrito.value) params.set('distrito', filtroDistrito.value)
-    if (filtroImpulsador.value) params.set('impulsador', filtroImpulsador.value)
-    if (filtroFechaDesde.value) params.set('fechaDesde', filtroFechaDesde.value)
-    if (filtroFechaHasta.value) params.set('fechaHasta', filtroFechaHasta.value)
-    params.set('exportVersion', 'links-v2')
-
-    const token = session.value?.access_token
-    if (!token) throw new Error('Sesion requerida para generar el Excel.')
-    const response = await fetch(`${apiBaseUrl}/portal/activations/export-excel?${params}`, {
-      headers: { Authorization: `Bearer ${token}` },
-      cache: 'no-store',
-    })
-    if (!response.ok) {
-      const payload = await response.json().catch(() => null)
-      throw new Error(payload?.error || `Error HTTP ${response.status}`)
-    }
+    const response = await fetchExcelExport(filtrosActuales())
     if (response.headers.get('X-Export-Version') !== 'links-v2') {
       throw new Error('La API respondio con una version antigua de la exportacion. Vuelve a desplegar el backend.')
     }
@@ -1066,7 +1021,7 @@ async function descargarExcelPersonalizado() {
         <aside class="detalle-activacion" role="dialog" aria-modal="true" aria-label="Detalle de activacion">
           <header class="detalle-header">
             <div><p class="view-kicker">Registro de activacion</p><h3 class="detalle-title">{{ getClienteComercio(activacionSeleccionada) }}</h3></div>
-            <button v-if="canEditActivaciones && !editandoActivacion" type="button" class="boton boton-editar" :disabled="!activacionSeleccionada.id || cargandoDetalle" @click="iniciarEdicion">Editar</button>
+            <button v-if="isAdmin && !editandoActivacion" type="button" class="boton boton-editar" :disabled="!activacionSeleccionada.id || cargandoDetalle" @click="iniciarEdicion">Editar</button>
             <button type="button" class="detalle-close" aria-label="Cerrar detalle" @click="cerrarDetalle">×</button>
           </header>
           <p v-if="cargandoDetalle" class="panel-empty">Cargando detalle completo...</p>
@@ -1102,8 +1057,8 @@ async function descargarExcelPersonalizado() {
               <label><span class="field-label">Hubo error</span><select v-model="formularioEdicion.hubo_error" class="input-texto"><option :value="false">No</option><option :value="true">Sí</option></select></label>
               <label v-if="formularioEdicion.hubo_error"><span class="field-label">Tipo de error</span><select v-model="formularioEdicion.tipo_error" class="input-texto"><option value="">Selecciona tipo</option><option v-if="formularioEdicion.tipo_error && !ACTIVATION_ERROR_TYPES.includes(formularioEdicion.tipo_error)" :value="formularioEdicion.tipo_error">Histórico: {{ formularioEdicion.tipo_error }}</option><option v-for="tipoError in ACTIVATION_ERROR_TYPES" :key="tipoError" :value="tipoError">{{ tipoError }}</option></select></label>
               <label v-if="formularioEdicion.hubo_error && formularioEdicion.tipo_error === 'Otro'" class="edicion-field-wide"><span class="field-label">Descripcion del error</span><textarea v-model="formularioEdicion.descripcion_error" class="input-texto" rows="3"></textarea></label>
-              <label v-if="canAdminister"><span class="field-label">Evidencia principal</span><input ref="inputFotoPrincipal" type="file" accept="image/jpeg,image/png,image/webp" class="input-texto" @change="seleccionarFoto('principal', $event)"><button type="button" class="boton boton-editar" :disabled="!fotoPrincipalArchivo" @click="reemplazarFoto('principal')">{{ reemplazandoFoto === 'principal' ? 'Reemplazando...' : 'Reemplazar evidencia' }}</button></label>
-              <label v-if="canAdminister"><span class="field-label">Evidencia Cash-In</span><input ref="inputFotoCashIn" type="file" accept="image/jpeg,image/png,image/webp" class="input-texto" @change="seleccionarFoto('cash-in', $event)"><button type="button" class="boton boton-editar" :disabled="!fotoCashInArchivo" @click="reemplazarFoto('cash-in')">{{ reemplazandoFoto === 'cash-in' ? 'Reemplazando...' : 'Reemplazar Cash-In' }}</button></label>
+              <label v-if="isAdmin"><span class="field-label">Evidencia principal</span><input ref="inputFotoPrincipal" type="file" accept="image/jpeg,image/png,image/webp" class="input-texto" @change="seleccionarFoto('principal', $event)"><button type="button" class="boton boton-editar" :disabled="!fotoPrincipalArchivo" @click="reemplazarFoto('principal')">{{ reemplazandoFoto === 'principal' ? 'Reemplazando...' : 'Reemplazar evidencia' }}</button></label>
+              <label v-if="isAdmin"><span class="field-label">Evidencia Cash-In</span><input ref="inputFotoCashIn" type="file" accept="image/jpeg,image/png,image/webp" class="input-texto" @change="seleccionarFoto('cash-in', $event)"><button type="button" class="boton boton-editar" :disabled="!fotoCashInArchivo" @click="reemplazarFoto('cash-in')">{{ reemplazandoFoto === 'cash-in' ? 'Reemplazando...' : 'Reemplazar Cash-In' }}</button></label>
               <label><span class="field-label">Es plaza temporal</span><select v-model="formularioEdicion.es_plaza_temporal" class="input-texto"><option :value="false">No</option><option :value="true">Si</option></select></label>
               <label v-if="formularioEdicion.es_plaza_temporal"><span class="field-label">Plaza temporal</span><input v-model="formularioEdicion.plaza_temporal" class="input-texto"></label>
               <label class="edicion-field-wide"><span class="field-label">Motivo de edicion</span><textarea v-model="motivoEdicion" class="input-texto" rows="3" placeholder="Obligatorio"></textarea></label>
@@ -1126,7 +1081,7 @@ async function descargarExcelPersonalizado() {
                 </div>
               </dl>
             </section>
-            <div v-if="canAdminister" class="confirm-actions"><button type="button" class="boton boton-eliminar" :disabled="!canEditActivaciones || deletingActivationId === activacionSeleccionada.id || !activacionSeleccionada.id" @click="eliminarActivacion(activacionSeleccionada)">{{ deletingActivationId === activacionSeleccionada.id ? 'Eliminando...' : 'Eliminar activacion' }}</button></div>
+            <div v-if="isAdmin" class="confirm-actions"><button type="button" class="boton boton-eliminar" :disabled="deletingActivationId === activacionSeleccionada.id || !activacionSeleccionada.id" @click="eliminarActivacion(activacionSeleccionada)">{{ deletingActivationId === activacionSeleccionada.id ? 'Eliminando...' : 'Eliminar activacion' }}</button></div>
           </div>
         </aside>
       </div>

@@ -3,6 +3,7 @@ import express from 'express'
 import { createClient } from '@supabase/supabase-js'
 import { fetchActivaciones, generateActivacionesExcel } from './activacionesExcel.js'
 import { aplicarAlcanceLider, esUuid, resolverAlcanceLider } from './alcanceLider.js'
+import { resolvePortalUser } from './portalAuth.js'
 import { resolveStorageObjectPathFromFotoUrl } from './storagePaths.js'
 import { aplicarFiltrosActivaciones, crearCatalogoCiudades, normalizarFiltros, resolverCiudadesFiltro } from './activacionesFiltros.js'
 import { SELECT_LISTADO_ACTIVACIONES, parsearPagina } from './activacionesListado.js'
@@ -80,8 +81,6 @@ const ALLOWED_TEMPORARY_ZONE_TYPES = new Set(['universidad', 'feria', 'evento', 
 const REQUIRED_ENV = [
   'SUPABASE_URL',
   'SUPABASE_SERVICE_ROLE_KEY',
-  'ADMIN_BASIC_USER',
-  'ADMIN_BASIC_PASS',
   'EVIDENCE_LINK_SECRET',
 ]
 const DEFAULT_ALLOWED_ORIGINS = [
@@ -425,42 +424,12 @@ function asyncRoute(handler) {
   }
 }
 
-function parseBasicAuth(header) {
-  if (!header || !header.startsWith('Basic ')) {
-    return null
-  }
-
-  try {
-    const base64Payload = header.slice('Basic '.length)
-    const decoded = Buffer.from(base64Payload, 'base64').toString('utf8')
-    const separatorIndex = decoded.indexOf(':')
-
-    if (separatorIndex < 0) {
-      return null
-    }
-
-    return {
-      username: decoded.slice(0, separatorIndex),
-      password: decoded.slice(separatorIndex + 1),
-    }
-  } catch {
-    return null
-  }
-}
-
-function createAdminRateLimiter({ windowMs, maxRequests }) {
+function createRateLimiter({ windowMs, maxRequests }, keyOf = (req) => req.ip ?? 'unknown') {
   const attempts = new Map()
 
   return (req, res, next) => {
     const now = Date.now()
-    const authorization = typeof req.headers.authorization === 'string' ? req.headers.authorization : ''
-    const parsed = parseBasicAuth(authorization)
-    const subject = parsed
-      ? `basic:${parsed.username}`
-      : authorization.startsWith('Bearer ')
-        ? 'bearer'
-        : 'anonymous'
-    const key = `${req.ip ?? 'unknown'}:${subject}`
+    const key = keyOf(req)
     const current = attempts.get(key)
 
     if (!current || current.resetAt <= now) {
@@ -1211,71 +1180,21 @@ export function createAdminApiApp({ env = process.env, adminSupabase: injectedSu
   })
 
   app.use(express.json({ limit: REQUEST_BODY_LIMIT }))
-  app.use(express.urlencoded({ extended: false, limit: REQUEST_BODY_LIMIT }))
   app.use(handleBodyParseError)
 
-  async function resolvePortalUser(req) {
-    const authorization = typeof req.headers.authorization === 'string' ? req.headers.authorization : ''
-    if (!authorization.startsWith('Bearer ')) return null
-    const { data: authData, error: authError } = await adminSupabase.auth.getUser(authorization.slice(7))
-    if (authError || !authData.user) return null
-    const { data: profile } = await adminSupabase.from('activadores').select('usuario_id,auth_user_id,nombre,email,rol,estado,lider_id,puede_activar').eq('auth_user_id', authData.user.id).maybeSingle()
-    if (!profile || profile.estado !== 'activo') return null
-    const { data: roleRows, error: rolesError } = await adminSupabase
-      .from('activador_roles')
-      .select('rol')
-      .eq('usuario_id', profile.usuario_id)
-    if (rolesError) {
-      return ['administrador', 'lider', 'banco'].includes(profile.rol)
-        ? { ...profile, roles: [profile.rol] }
-        : null
-    }
-    const roles = [...new Set([profile.rol, ...(roleRows ?? []).map((row) => row.rol)].filter(Boolean))]
-    if (!roles.includes('administrador') && !['lider', 'banco'].includes(profile.rol)) return null
-    return { ...profile, roles }
-  }
-
-  async function requirePortalAuth(req, res, next) {
-    const profile = await resolvePortalUser(req)
-    if (!profile) { jsonError(res, 401, 'Sesion invalida o usuario sin permisos.'); return }
-    req.portalUser = profile
+  async function authenticate(req, res, next) {
+    const user = await resolvePortalUser(adminSupabase, req.headers.authorization)
+    if (!user) { jsonError(res, 401, 'Sesion invalida o usuario sin permisos.'); return }
+    req.user = user
     next()
   }
 
-  async function requireAdminBasicAuth(req, res, next) {
-    const parsed = parseBasicAuth(req.headers.authorization)
-    if (!parsed) {
-      const profile = await resolvePortalUser(req)
-      const isActivationEdit = req.method === 'PATCH' && /^\/activaciones\/[^/]+\/?$/.test(req.path)
-      const canEditActivation = isActivationEdit && profile?.roles?.includes('administrador')
-      if (profile?.rol === 'administrador' || canEditActivation) { req.portalUser = profile; next(); return }
-      if (typeof req.headers.authorization === 'string' && req.headers.authorization.startsWith('Bearer ')) {
-        jsonError(res, 403, 'Se requiere un administrador activo.')
-        return
-      }
-      res.setHeader('WWW-Authenticate', 'Basic realm="admin-api"')
-      jsonError(res, 401, 'Credenciales requeridas.')
-      return
-    }
-
-    const isValidUser = timingSafeEqualText(parsed.username, env.ADMIN_BASIC_USER)
-    const isValidPass = timingSafeEqualText(parsed.password, env.ADMIN_BASIC_PASS)
-
-    if (!isValidUser || !isValidPass) {
-      jsonError(res, 401, 'Credenciales invalidas.')
-      return
-    }
-
-    req.adminUser = parsed.username
+  function requireAdmin(req, res, next) {
+    if (!req.user.isAdmin) { jsonError(res, 403, 'Se requiere un administrador activo.'); return }
     next()
   }
 
   async function requireAdminReauthentication(req, res, next) {
-    if (req.portalUser?.rol !== 'administrador') {
-      jsonError(res, 403, 'Se requiere un administrador autenticado por Bearer.')
-      return
-    }
-
     const password = typeof req.body?.password === 'string' ? req.body.password : ''
     if (req.body && typeof req.body === 'object') delete req.body.password
     if (!password) {
@@ -1283,7 +1202,7 @@ export function createAdminApiApp({ env = process.env, adminSupabase: injectedSu
       return
     }
 
-    const authEmail = normalizeEmail(req.portalUser.email)
+    const authEmail = normalizeEmail(req.user.email)
     if (!authEmail) {
       jsonError(res, 401, 'No se pudo reautenticar al administrador.')
       return
@@ -1296,7 +1215,7 @@ export function createAdminApiApp({ env = process.env, adminSupabase: injectedSu
       email: authEmail,
       password,
     })
-    if (error || data.user?.id !== req.portalUser.auth_user_id) {
+    if (error || data.user?.id !== req.user.auth_user_id) {
       jsonError(res, 401, 'Contraseña incorrecta.')
       return
     }
@@ -1308,7 +1227,7 @@ export function createAdminApiApp({ env = process.env, adminSupabase: injectedSu
     res.json({ ok: true })
   })
 
-  app.get('/evidencia/:activacionId/:tipo/:token', createAdminRateLimiter(EVIDENCE_LINK_RATE_LIMIT), asyncRoute(async (req, res) => {
+  app.get('/evidencia/:activacionId/:tipo/:token', createRateLimiter(EVIDENCE_LINK_RATE_LIMIT), asyncRoute(async (req, res) => {
     const activacionId = normalizeText(req.params.activacionId)
     const tipo = normalizeText(req.params.tipo)
     const token = normalizeText(req.params.token)
@@ -1356,12 +1275,11 @@ export function createAdminApiApp({ env = process.env, adminSupabase: injectedSu
     return (users ?? []).map(({ auth_user_id, ...rest }) => ({ ...rest, cuenta_acceso_eliminada: auth_user_id == null }))
   }
 
-  app.use('/portal', requirePortalAuth)
+  app.use('/portal', authenticate)
   app.get('/portal/me', asyncRoute(async (req, res) => {
-    const [profile] = await attachUserRoles([req.portalUser])
-    const safeProfile = { ...profile }
-    delete safeProfile.auth_user_id
-    res.json({ profile: safeProfile })
+    const profile = { ...req.user }
+    delete profile.auth_user_id
+    res.json({ profile })
   }))
   app.get('/portal/plazas', asyncRoute(async (_req, res) => {
     const { data, error } = await adminSupabase.from('plazas').select('id,nombre').eq('activa', true).order('nombre')
@@ -1374,8 +1292,8 @@ export function createAdminApiApp({ env = process.env, adminSupabase: injectedSu
   }))
   app.get('/portal/users', asyncRoute(async (req, res) => {
     let query = adminSupabase.from('activadores').select('*').order('nombre')
-    if (req.portalUser.rol === 'lider') query = query.eq('lider_id', req.portalUser.usuario_id)
-    if (req.portalUser.rol === 'banco') query = query.eq('rol', 'activador')
+    if (!req.user.isAdmin && req.user.rol === 'lider') query = query.eq('lider_id', req.user.usuario_id)
+    if (!req.user.isAdmin && req.user.rol === 'banco') query = query.eq('rol', 'activador')
     const { data, error } = await query
     if (error) { jsonError(res, 500, 'No se pudo obtener usuarios.', error.message); return }
     const users = data ?? []
@@ -1393,7 +1311,7 @@ export function createAdminApiApp({ env = process.env, adminSupabase: injectedSu
     res.json({ users: withAccessFlag(await attachUserRoles(await enrichUsersWithOrganization(resolvedUsers))) })
   }))
   app.get('/portal/activations/export-excel', asyncRoute(async (req, res) => {
-    const { alcance, error: teamError } = await resolverAlcanceLider(adminSupabase, req.portalUser)
+    const { alcance, error: teamError } = await resolverAlcanceLider(adminSupabase, req.user)
     if (teamError) {
       jsonError(res, 500, 'No se pudo resolver el equipo.', teamError.message)
       return
@@ -1435,7 +1353,7 @@ export function createAdminApiApp({ env = process.env, adminSupabase: injectedSu
   app.get('/portal/activations/page', asyncRoute(async (req, res) => {
     const filtros = normalizarFiltros(req.query)
     const { page, pageSize } = parsearPagina(req.query)
-    const { alcance, error: teamError } = await resolverAlcanceLider(adminSupabase, req.portalUser)
+    const { alcance, error: teamError } = await resolverAlcanceLider(adminSupabase, req.user)
     if (teamError) { jsonError(res, 500, 'No se pudo resolver el equipo.', teamError.message); return }
     const ciudades = await resolverCiudadesFiltro(obtenerCiudades, filtros)
     const construir = (select, options) => {
@@ -1460,7 +1378,7 @@ export function createAdminApiApp({ env = process.env, adminSupabase: injectedSu
   }))
 
   app.get('/portal/metrics/activations', asyncRoute(async (req, res) => {
-    const { alcance, error: teamError } = await resolverAlcanceLider(adminSupabase, req.portalUser)
+    const { alcance, error: teamError } = await resolverAlcanceLider(adminSupabase, req.user)
     if (teamError) { jsonError(res, 500, 'No se pudo resolver el equipo.', teamError.message); return }
     const construirConsulta = (select, options) => {
       const query = adminSupabase.from('activaciones').select(select, options)
@@ -1478,7 +1396,7 @@ export function createAdminApiApp({ env = process.env, adminSupabase: injectedSu
   }))
 
   app.get('/portal/activations/export-rows', asyncRoute(async (req, res) => {
-    const { alcance, error: teamError } = await resolverAlcanceLider(adminSupabase, req.portalUser)
+    const { alcance, error: teamError } = await resolverAlcanceLider(adminSupabase, req.user)
     if (teamError) { jsonError(res, 500, 'No se pudo resolver el equipo.', teamError.message); return }
     const rows = await fetchActivaciones(adminSupabase, normalizarFiltros(req.query), alcance)
     const conCorreo = await attachActivationCreatorEmail(adminSupabase, rows)
@@ -1495,7 +1413,7 @@ export function createAdminApiApp({ env = process.env, adminSupabase: injectedSu
   app.get('/portal/activations/:id', asyncRoute(async (req, res) => {
     const id = String(req.params.id ?? '')
     if (!esUuid(id)) { jsonError(res, 400, 'Identificador de activacion invalido.'); return }
-    const { alcance, error: teamError } = await resolverAlcanceLider(adminSupabase, req.portalUser)
+    const { alcance, error: teamError } = await resolverAlcanceLider(adminSupabase, req.user)
     if (teamError) { jsonError(res, 500, 'No se pudo resolver el equipo.', teamError.message); return }
     let query = adminSupabase.from('activaciones').select('*').eq('id', id)
     if (alcance) query = aplicarAlcanceLider(query, alcance)
@@ -1512,7 +1430,7 @@ export function createAdminApiApp({ env = process.env, adminSupabase: injectedSu
     }
   }))
 
-  app.use('/admin', createAdminRateLimiter(ADMIN_RATE_LIMIT), requireAdminBasicAuth)
+  app.use('/admin', authenticate, requireAdmin, createRateLimiter(ADMIN_RATE_LIMIT, (req) => req.user.usuario_id))
 
   app.get('/admin/healthz', (_req, res) => {
     res.json({ ok: true })
@@ -2023,7 +1941,7 @@ export function createAdminApiApp({ env = process.env, adminSupabase: injectedSu
       const tipoZona = normalizeText(req.body?.tipo_zona) || 'punto_temporal'
       const ciudadPlaza = normalizeNullableText(req.body?.ciudad_plaza)
       const activo = req.body?.activo !== false
-      const authorizedBy = req.portalUser?.usuario_id
+      const authorizedBy = req.user.usuario_id
       if (!userId || !plazaTemporal || !motivo || Number.isNaN(inicio.getTime()) || Number.isNaN(fin.getTime()) || fin <= inicio) {
         jsonError(res, 400, 'activador, plaza temporal, inicio, fin y motivo validos son obligatorios.')
         return
@@ -2075,7 +1993,7 @@ export function createAdminApiApp({ env = process.env, adminSupabase: injectedSu
     '/admin/users/:userId/temporary-plaza',
     asyncRoute(async (req, res) => {
       const now = new Date().toISOString()
-      const authorizedBy = req.portalUser?.usuario_id
+      const authorizedBy = req.user.usuario_id
       if (!authorizedBy) {
         jsonError(res, 400, 'La cancelacion requiere una sesion administrativa identificable.')
         return
@@ -2461,11 +2379,6 @@ export function createAdminApiApp({ env = process.env, adminSupabase: injectedSu
     '/admin/activaciones/:activacionId/fotos/:tipo',
     parseActivationPhotoBody,
     asyncRoute(async (req, res) => {
-      if (req.portalUser?.rol !== 'administrador') {
-        jsonError(res, 403, 'Se requiere un administrador autenticado.')
-        return
-      }
-
       const activacionId = normalizeText(req.params?.activacionId)
       const tipo = normalizeText(req.params?.tipo).toLowerCase()
       const fieldByType = { principal: 'foto_url', 'cash-in': 'foto_cash_in' }
@@ -3183,7 +3096,7 @@ export function createAdminApiApp({ env = process.env, adminSupabase: injectedSu
       const scope = audience === 'users' ? 'user' : 'all'
       const targetUserId = normalizeText(rawTargetUserId)
       const specificUserIds = [...new Set([...requestedUserIds, ...(targetUserId ? [targetUserId] : [])])]
-      const createdBy = normalizeText(req.portalUser?.email) || normalizeText(req.adminUser) || 'admin'
+      const createdBy = normalizeText(req.user.email) || 'admin'
 
       if (title.length < 3 || title.length > 120) {
         jsonError(res, 400, 'El titulo debe tener entre 3 y 120 caracteres.')

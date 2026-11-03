@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { startPortal, TOKENS, IDS } from './helpers/portalApp.mjs'
+import { seedTables, startPortal, TOKENS, IDS } from './helpers/portalApp.mjs'
 
 async function conPortal(fn, tables) {
   const portal = await startPortal(tables)
@@ -35,6 +35,33 @@ test('GET /portal/me devuelve el perfil sin auth_user_id y con roles', () =>
     assert.ok(!('auth_user_id' in profile))
     assert.deepEqual(profile.roles, ['lider'])
   }))
+
+test('GET /portal/me resuelve perfil y roles con una sola consulta', () =>
+  conPortal(async ({ get, supabase }) => {
+    assert.equal((await get('/portal/me', TOKENS.lider)).status, 200)
+    assert.deepEqual(supabase.calls.from, ['activadores'])
+  }))
+
+test('/admin: exige Bearer de administrador; otros esquemas y lideres reciben 401/403', () =>
+  conPortal(async ({ get, base }) => {
+    assert.equal((await get('/admin/healthz')).status, 401)
+    assert.equal((await get('/admin/healthz', TOKENS.lider)).status, 403)
+    assert.equal((await get('/admin/healthz', TOKENS.admin)).status, 200)
+    const otroEsquema = await fetch(`${base}/admin/healthz`, { headers: { Authorization: 'Token abc' } })
+    assert.equal(otroEsquema.status, 401)
+  }))
+
+test('administrador por activador_roles: accede a /admin y ve todo el alcance aunque su rol principal sea lider', () => {
+  const tables = seedTables()
+  tables.activador_roles.push({ usuario_id: IDS.lider, rol: 'administrador' })
+  return conPortal(async ({ get }) => {
+    assert.equal((await get('/admin/healthz', TOKENS.lider)).status, 200)
+    const { profile } = await (await get('/portal/me', TOKENS.lider)).json()
+    assert.deepEqual(profile.roles, ['lider', 'administrador'])
+    const excel = await get('/portal/activations/export-excel', TOKENS.lider)
+    assert.equal(excel.headers.get('x-export-row-count'), '6')
+  }, tables)
+})
 
 test('GET /portal/activations/export-excel: cuenta filas segun alcance y filtros', () =>
   conPortal(async ({ get }) => {

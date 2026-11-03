@@ -1,13 +1,11 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { adminApiRequest } from '../lib/adminApiClient'
+import { apiRequest } from '../lib/api'
 import { useAuth } from '../lib/authStore'
 import { notifyError, notifySuccess, notifyWarning } from '../lib/feedback'
 import { containsNormalized } from '../lib/textUtils'
 
-const apiBaseUrl = (import.meta.env.VITE_ADMIN_API_URL ?? '/api').replace(/\/$/, '')
-
-const { session, isAdmin } = useAuth()
+const { isAdmin } = useAuth()
 const initializing = ref(true)
 const accessError = ref(null)
 
@@ -111,17 +109,8 @@ function resetForm() {
   busquedaUsuario.value = ''
 }
 
-async function requestAdmin(path, options = {}) {
-  return adminApiRequest({
-    baseUrl: apiBaseUrl,
-    path,
-    token: session.value?.access_token,
-    ...options,
-  })
-}
-
 async function cargarUsuarios() {
-  const result = await requestAdmin('/admin/users')
+  const result = await apiRequest('/admin/users')
   usuarios.value = (result.users ?? []).filter((usuario) => (usuario.estado ?? 'activo') === 'activo')
 }
 
@@ -130,7 +119,7 @@ async function cargarNotificaciones() {
   errorNotificaciones.value = null
 
   try {
-    const result = await requestAdmin('/admin/notifications?limit=120')
+    const result = await apiRequest('/admin/notifications?limit=120')
     notificaciones.value = result.notifications ?? []
   } catch (error) {
     errorNotificaciones.value = getErrorMessage(error)
@@ -174,7 +163,7 @@ async function enviarNotificacion() {
       usuarioObjetivoIds: alcance.value === 'users' ? usuarioObjetivoIds.value : [],
     }
 
-    const result = await requestAdmin('/admin/notifications', {
+    const result = await apiRequest('/admin/notifications', {
       method: 'POST',
       body: payload,
     })

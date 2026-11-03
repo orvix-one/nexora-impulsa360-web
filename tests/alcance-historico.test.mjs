@@ -195,7 +195,7 @@ const handlersActivaciones = {
 test('metricas, listado y exportacion resuelven el alcance del lider con el mismo helper y sin excluir por estado', () => {
   for (const nombre of ['metricas', 'pagina', 'exportRows', 'detalle']) {
     const tramo = handlersActivaciones[nombre]()
-    assert.match(tramo, /resolverAlcanceLider\(adminSupabase, req\.portalUser\)/, `${nombre}: alcance del lider autenticado`)
+    assert.match(tramo, /resolverAlcanceLider\(adminSupabase, req\.user\)/, `${nombre}: alcance del lider autenticado`)
     assert.doesNotMatch(tramo, /estado/, `${nombre}: el estado (activo/inhabilitado) nunca acota activaciones`)
     assert.doesNotMatch(tramo, /\.in\('usuario_id', ids\)/, `${nombre}: el equipo actual no autoriza por si solo`)
   }
@@ -205,8 +205,8 @@ test('metricas, listado y exportacion resuelven el alcance del lider con el mism
 test('el helper de alcance deriva el equipo actual y el lider autenticado, sin estado', () => {
   const alcanceSource = readFileSync(new URL('../server/alcanceLider.js', import.meta.url), 'utf8')
   const funcion = alcanceSource.slice(alcanceSource.indexOf('export async function resolverAlcanceLider'))
-  assert.match(funcion, /\.from\('activadores'\)\.select\('usuario_id'\)\.eq\('lider_id', portalUser\.usuario_id\)/)
-  assert.match(funcion, /liderId: portalUser\.usuario_id/)
+  assert.match(funcion, /\.from\('activadores'\)\.select\('usuario_id'\)\.eq\('lider_id', user\.usuario_id\)/)
+  assert.match(funcion, /liderId: user\.usuario_id/)
   assert.doesNotMatch(funcion, /estado/)
 })
 

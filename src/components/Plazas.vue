@@ -1,11 +1,8 @@
 <script setup>
 import { ref, onMounted } from 'vue'
-import { adminApiRequest } from '../lib/adminApiClient'
-import { useAuth } from '../lib/authStore'
+import { apiRequest } from '../lib/api'
 import { notifyError, notifySuccess, notifyWarning, requestPasswordConfirmation } from '../lib/feedback'
 
-const apiBaseUrl = (import.meta.env.VITE_ADMIN_API_URL ?? '/api').replace(/\/$/, '')
-const { session } = useAuth()
 const plazas = ref([])
 const loading = ref(false)
 const procesando = ref(false)
@@ -19,13 +16,10 @@ const plazaDestino = ref('')
 
 function plazaVacia() { return { nombre: '', es_ciudad_geografica: false, aliases: '' } }
 
-function request(path, options = {}) {
-  return adminApiRequest({ baseUrl: apiBaseUrl, path, token: session.value?.access_token, ...options })
-}
 function requestWithTimeout(path, options = {}, timeoutMs = 15000) {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
-  return request(path, { ...options, signal: controller.signal }).finally(() => clearTimeout(timer))
+  return apiRequest(path, { ...options, signal: controller.signal }).finally(() => clearTimeout(timer))
 }
 
 function errorMessage(error) { return error instanceof Error ? error.message : 'Error inesperado.' }
@@ -33,7 +27,7 @@ function errorMessage(error) { return error instanceof Error ? error.message : '
 async function cargar() {
   loading.value = true
   try {
-    const result = await request('/admin/plazas')
+    const result = await apiRequest('/admin/plazas')
     plazas.value = result.plazas ?? []
   } catch (error) { notifyError(errorMessage(error)) }
   finally { loading.value = false }
@@ -43,7 +37,7 @@ async function crear() {
   if (!nuevo.value.nombre.trim()) { notifyWarning('Nombre de plaza es obligatorio.'); return }
   procesando.value = true
   try {
-    await request('/admin/plazas', { method: 'POST', body: { ...nuevo.value, nombre: nuevo.value.nombre.trim() } })
+    await apiRequest('/admin/plazas', { method: 'POST', body: { ...nuevo.value, nombre: nuevo.value.nombre.trim() } })
     nuevo.value = plazaVacia()
     await cargar(); notifySuccess('Plaza creada correctamente.')
   } catch (error) { notifyError(errorMessage(error)) }
@@ -64,7 +58,7 @@ async function guardar(plaza) {
   if (!edicion.value.nombre || typeof edicion.value.activa !== 'boolean') { notifyWarning('Nombre y estado son obligatorios.'); return }
   procesando.value = true
   try {
-    await request(`/admin/plazas/${plaza.id}`, { method: 'PATCH', body: edicion.value })
+    await apiRequest(`/admin/plazas/${plaza.id}`, { method: 'PATCH', body: edicion.value })
     cancelar(); await cargar(); notifySuccess('Plaza actualizada correctamente.')
   } catch (error) { notifyError(errorMessage(error)) }
   finally { procesando.value = false }
@@ -73,7 +67,7 @@ async function guardar(plaza) {
 async function cambiarEstado(plaza) {
   procesando.value = true
   try {
-    await request(`/admin/plazas/${plaza.id}`, { method: 'PATCH', body: { activa: !plaza.activa } })
+    await apiRequest(`/admin/plazas/${plaza.id}`, { method: 'PATCH', body: { activa: !plaza.activa } })
     await cargar(); notifySuccess(plaza.activa ? 'Plaza desactivada.' : 'Plaza activada.')
   } catch (error) { notifyError(errorMessage(error)) }
   finally { procesando.value = false }
@@ -88,7 +82,7 @@ async function deshabilitarPlaza(plaza) {
   }
   procesando.value = true
   try {
-    await request(`/admin/plazas/${plaza.id}`, { method: 'PATCH', body: { activa: false } })
+    await apiRequest(`/admin/plazas/${plaza.id}`, { method: 'PATCH', body: { activa: false } })
     modalReasignar.value = false
     plazaPendiente.value = null
     await cargar(); notifySuccess('Plaza desactivada.')
@@ -102,7 +96,7 @@ async function eliminarPlaza(plaza) {
   eliminandoId.value = plaza.id
   procesando.value = true
   try {
-    const result = await request(`/admin/plazas/${plaza.id}`, { method: 'DELETE', body: { password } })
+    const result = await apiRequest(`/admin/plazas/${plaza.id}`, { method: 'DELETE', body: { password } })
     await cargar();
     notifySuccess(result.message ?? 'Operación realizada.')
   } catch (error) {

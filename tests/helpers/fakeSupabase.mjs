@@ -141,10 +141,19 @@ class Query {
     }
     if (this.columns !== '*') {
       const keys = this.columns.split(',').map((key) => key.trim())
-      rows = rows.map((row) => Object.fromEntries(keys.map((key) => [key, row[key]])))
+      rows = rows.map((row) => Object.fromEntries(keys.map((key) => [key.replace(/\(.*$/, ''), this.readColumn(row, key)])))
     }
     if (this.wantsSingle) return { data: rows[0] ?? null, error: null }
     return { data: this.headOnly ? null : rows, error: null, count: this.countMode ? count : null }
+  }
+
+  readColumn(row, key) {
+    const embedded = key.match(/^(\w+)\((.+)\)$/)
+    if (!embedded) return row[key]
+    const [, table, columns] = embedded
+    return (this.db.tables[table] ?? [])
+      .filter((child) => child.usuario_id === row.usuario_id)
+      .map((child) => Object.fromEntries(columns.split('|').map((column) => [column, child[column]])))
   }
 
   then(resolve, reject) {
@@ -161,9 +170,9 @@ export function createFakeSupabase({ tables = {}, tokens = {} } = {}) {
     tables,
     from: (table) => new Query(db, table),
     auth: {
-      async getUser(token) {
+      async getClaims(token) {
         const user = tokens[token]
-        return user ? { data: { user }, error: null } : { data: { user: null }, error: new Error('invalid token') }
+        return user ? { data: { claims: { sub: user.id } }, error: null } : { data: null, error: new Error('invalid token') }
       },
     },
     storage: {

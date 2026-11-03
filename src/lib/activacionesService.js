@@ -1,18 +1,7 @@
-import { supabase } from './supabaseClient'
-
-const apiBaseUrl = (import.meta.env.VITE_ADMIN_API_URL ?? '/api').replace(/\/$/, '')
-
-export async function portalRequest(path) {
-  const { data } = await supabase.auth.getSession()
-  if (!data.session?.access_token) throw new Error('Sesion requerida.')
-  const response = await fetch(`${apiBaseUrl}${path}`, { headers: { Authorization: `Bearer ${data.session.access_token}` } })
-  const payload = await response.json().catch(() => null)
-  if (!response.ok) throw new Error(payload?.error || `Error HTTP ${response.status}`)
-  return payload
-}
+import { apiRequest } from './api'
 
 export async function fetchMetricasActivaciones() {
-  const payload = await portalRequest('/portal/metrics/activations')
+  const payload = await apiRequest('/portal/metrics/activations')
   return payload.activations ?? []
 }
 
@@ -28,16 +17,22 @@ export async function fetchActivacionesPagina({ page = 1, pageSize = 50, filtros
   const params = filtrosAQuery(filtros)
   params.set('page', String(page))
   params.set('pageSize', String(pageSize))
-  const payload = await portalRequest(`/portal/activations/page?${params}`)
+  const payload = await apiRequest(`/portal/activations/page?${params}`)
   return { activations: payload.activations ?? [], total: payload.total ?? 0 }
 }
 
 export async function fetchActivacionDetalle(id) {
-  const payload = await portalRequest(`/portal/activations/${encodeURIComponent(id)}`)
+  const payload = await apiRequest(`/portal/activations/${encodeURIComponent(id)}`)
   return payload.activation
 }
 
 export async function fetchActivacionesExportacion(filtros) {
-  const payload = await portalRequest(`/portal/activations/export-rows?${filtrosAQuery(filtros)}`)
+  const payload = await apiRequest(`/portal/activations/export-rows?${filtrosAQuery(filtros)}`)
   return payload.activations ?? []
+}
+
+export function fetchExcelExport(filtros) {
+  const params = filtrosAQuery(filtros)
+  params.set('exportVersion', 'links-v2')
+  return apiRequest(`/portal/activations/export-excel?${params}`, { raw: true, cache: 'no-store' })
 }

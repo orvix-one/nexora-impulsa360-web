@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { portalRequest } from '../lib/activacionesService'
+import { apiRequest } from '../lib/api'
 import { containsNormalized } from '../lib/textUtils'
 import { notifyError, notifyInfo, notifySuccess } from '../lib/feedback'
 import { deduplicarPlazas, mismaPlaza, nombreLegiblePlaza } from '../lib/plazas'
@@ -126,7 +126,7 @@ onMounted(async () => {
   errorMsg.value = null
 
   try {
-    const data = await portalRequest('/portal/users')
+    const data = await apiRequest('/portal/users')
     impulsadores.value = data.users ?? []
   } catch (error) {
     logClientError('impulsadores.fetch', error)

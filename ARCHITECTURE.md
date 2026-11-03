@@ -7,12 +7,15 @@ Vue SPA → `/api` (Express, one Vercel function in `gru1`) → Supabase. The AP
 ## Layout
 
 - `src/pages`, `src/components`, `src/lib`: the SPA (views, components, shared logic).
-- `server/app.js`: the API (`/portal/*` scoped reads, `/admin/*` writes, `/evidencia/*` photo links). Helpers in `server/*.js`.
+- `src/lib/api.js`: the only HTTP client (`apiRequest`); `src/lib/authStore.js`: session + profile.
+- `server/app.js`: the API (`/portal/*` scoped reads, `/admin/*` writes, `/evidencia/*` photo links). Helpers in `server/*.js`; `server/portalAuth.js` resolves the user.
 - `api/index.js`: Vercel entry. `tests/`: `node:test`. `supabase/`: schema and migrations (with README).
 
 ## Practices
 
-- Every `/portal` request resolves the user; activations endpoints scope leaders with `resolverAlcanceLider` + `aplicarAlcanceLider` and never filter by profile `estado`.
+- Auth: `authenticate` (`/portal`, `/admin`) verifies the JWT locally with `auth.getClaims` and loads profile + roles in one query into `req.user`; `requireAdmin` guards `/admin`. Admin = `roles` includes `administrador`. No other auth scheme exists.
+- Client: all calls go through `apiRequest`; the token comes from the auth store (set by `onAuthStateChange`). Profile loads once per user; token refreshes do not reload it.
+- Activations endpoints scope leaders with `resolverAlcanceLider` + `aplicarAlcanceLider` and never filter by profile `estado`.
 - Lists are paginated on the server with filters in SQL. Only the detail endpoint signs photos and looks up emails.
 - Order is always `created_at desc, id asc`.
 - Select lists are static; no schema discovery at runtime. The schema is `supabase/migrations/20261029000000_baseline.sql` plus later migrations.

@@ -19,10 +19,10 @@ export function aplicarAlcanceLider(query, alcance) {
   return query.or(expresion)
 }
 
-// Administrador y banco no tienen alcance: devuelve { alcance: null }.
-export async function resolverAlcanceLider(adminSupabase, portalUser) {
-  if (portalUser?.rol !== 'lider') return { alcance: null, error: null }
-  const { data, error } = await adminSupabase.from('activadores').select('usuario_id').eq('lider_id', portalUser.usuario_id)
+// Administradores y banco no tienen alcance: devuelve { alcance: null }.
+export async function resolverAlcanceLider(adminSupabase, user) {
+  if (user.isAdmin || user.rol !== 'lider') return { alcance: null, error: null }
+  const { data, error } = await adminSupabase.from('activadores').select('usuario_id').eq('lider_id', user.usuario_id)
   if (error) return { alcance: null, error }
-  return { alcance: { userIds: (data ?? []).map((item) => item.usuario_id), liderId: portalUser.usuario_id }, error: null }
+  return { alcance: { userIds: (data ?? []).map((item) => item.usuario_id), liderId: user.usuario_id }, error: null }
 }
