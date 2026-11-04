@@ -221,7 +221,6 @@ test('créditos/remesas siguen la misma matriz que la app móvil', () => {
     ['tienda_barrio', 'no_habilitado', false, false],
     ['tienda_barrio', 'reactivacion', true, true],
     ['tienda_barrio', 'limbo', false, true],
-    ['tienda_barrio', 'config_cuenta', false, true],
     ['tienda_barrio', 'reimpresion_qr', true, true],
     ['comercio', 'comercio', false, true],
     ['comercio', 'reactivacion_comercio', true, true],
@@ -241,7 +240,6 @@ test('créditos/remesas siguen la misma matriz que la app móvil', () => {
 })
 
 test('sin tipo_grupo la elegibilidad usa la categoría inferida de la fila', () => {
-  assert.equal(isRemesasEligible({ base_activacion: 'tienda_barrio', tipo_activacion: 'config_cuenta' }), true)
   assert.equal(isCreditosEligible({ base_activacion: 'limbo', tipo_activacion: 'limbo' }), false)
   assert.equal(isRemesasEligible({ base_activacion: 'tienda_barrio', tipo_activacion: 'limbo' }), true)
   assert.equal(isCreditosEligible({ tipo_activacion: 'desconocido' }), false)

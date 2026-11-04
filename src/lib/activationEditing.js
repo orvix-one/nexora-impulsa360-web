@@ -79,7 +79,6 @@ export function inferActivationCategory(row = {}) {
   const type = normalizeKey(row.tipo_activacion)
   if (type === 'cliente_antiguo') return 'cliente_antiguo'
   if (['transeunte', 'reactivacion_transeunte'].includes(type)) return 'transeunte'
-  if (type === 'config_cuenta') return 'tienda_barrio'
   if (['comercio', 'reactivacion_comercio', 'limbo'].includes(type) ||
     row.tipo_comercio || row.rubro_comercio || row.rubro_comercio_otro || row.comercio_fuera_mercado != null) {
     return 'comercio'
@@ -120,7 +119,6 @@ const PRODUCT_ELIGIBILITY = {
     no_habilitado: NO_PRODUCTS,
     reactivacion: BOTH_PRODUCTS,
     limbo: ONLY_REMESAS,
-    config_cuenta: ONLY_REMESAS,
     reimpresion_qr: BOTH_PRODUCTS,
   },
   comercio: {
