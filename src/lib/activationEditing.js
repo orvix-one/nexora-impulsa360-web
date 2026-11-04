@@ -10,11 +10,11 @@ export const ACTIVATION_TYPES_BY_CATEGORY = {
     { key: 'comercio', label: 'Comercio' },
     { key: 'no_habilitado', label: 'No habilitado' },
     { key: 'reactivacion', label: 'Reactivación' },
-    { key: 'config_cuenta', label: 'Configuración de cuenta' },
+    { key: 'limbo', label: 'Limbo (Configuración de Cuenta)' },
     { key: 'reimpresion_qr', label: 'Reimpresión QR' },
   ],
   comercio: [
-    { key: 'comercio', label: 'Comercio' },
+    { key: 'comercio', label: 'Nuevo (Comercio)' },
     { key: 'reactivacion_comercio', label: 'Reactivación Comercio' },
     { key: 'limbo', label: 'Limbo (Configuración de Cuenta)' },
     { key: 'no_habilitado', label: 'No habilitado' },
@@ -101,16 +101,57 @@ export function isGeneralCommerce(category, activationType) {
   return category === 'comercio' && ['comercio', 'reactivacion_comercio'].includes(activationType)
 }
 
-export function isCreditosEligible(values = {}) {
+// foto_cash_in holds the "Reporte" photo for no_habilitado activations.
+export function secondaryPhotoLabel(values = {}) {
+  const category = inferActivationCategory(values)
   const type = normalizeKey(values.tipo_activacion)
-  return type === 'cliente_antiguo' || type === 'reimpresion_qr' || /^reactivacion/.test(type)
+  return ['tienda_barrio', 'comercio'].includes(category) && type === 'no_habilitado' ? 'Reporte' : 'Cash-In'
+}
+
+const BOTH_PRODUCTS = { creditos: true, remesas: true }
+const ONLY_CREDITOS = { creditos: true, remesas: false }
+const ONLY_REMESAS = { creditos: false, remesas: true }
+const NO_PRODUCTS = { creditos: false, remesas: false }
+
+// Mirror of lib/elegibilidadProductos.js in the mobile app; keep both in sync.
+const PRODUCT_ELIGIBILITY = {
+  tienda_barrio: {
+    comercio: ONLY_REMESAS,
+    no_habilitado: NO_PRODUCTS,
+    reactivacion: BOTH_PRODUCTS,
+    limbo: ONLY_REMESAS,
+    config_cuenta: ONLY_REMESAS,
+    reimpresion_qr: BOTH_PRODUCTS,
+  },
+  comercio: {
+    comercio: ONLY_REMESAS,
+    reactivacion_comercio: BOTH_PRODUCTS,
+    limbo: ONLY_REMESAS,
+    no_habilitado: NO_PRODUCTS,
+    reimpresion_qr: BOTH_PRODUCTS,
+  },
+  transeunte: {
+    transeunte: BOTH_PRODUCTS,
+    reactivacion_transeunte: BOTH_PRODUCTS,
+    cliente_antiguo: ONLY_CREDITOS,
+  },
+  cliente_antiguo: {
+    cliente_antiguo: BOTH_PRODUCTS,
+  },
+}
+
+export function productEligibility(values = {}) {
+  const category = inferActivationCategory(values)
+  const type = normalizeKey(values.tipo_activacion)
+  return PRODUCT_ELIGIBILITY[category]?.[type] ?? NO_PRODUCTS
+}
+
+export function isCreditosEligible(values = {}) {
+  return productEligibility(values).creditos
 }
 
 export function isRemesasEligible(values = {}) {
-  const category = values.tipo_grupo ?? inferActivationCategory(values)
-  const type = normalizeKey(values.tipo_activacion)
-  return (category === 'comercio' && type === 'comercio') ||
-    (category === 'transeunte' && type === 'transeunte')
+  return productEligibility(values).remesas
 }
 
 export function normalizeActivationClassification(values = {}, original = {}) {

@@ -126,7 +126,7 @@ export async function generateActivacionesExcel({ adminSupabase, bucket, filters
     ['Es Plaza Temporal', 'esPlazaTemporal', 18],
     ['Plaza Temporal', 'plazaTemporal', 20],
     ['Foto', 'foto', 28],
-    ['Foto Cash-In', 'fotoCashIn', 28],
+    ['Foto Cash-In / Reporte', 'fotoCashIn', 28],
     ['Latitud', 'latitud', 14],
     ['Longitud', 'longitud', 14],
     ['Usuario ID', 'usuarioId', 38],

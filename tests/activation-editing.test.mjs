@@ -10,6 +10,7 @@ import {
   isGeneralCommerce,
   isRemesasEligible,
   normalizeActivationClassification,
+  secondaryPhotoLabel,
   validateActivationClassification,
   validateActivationEdit,
   validateActivationTextLengths,
@@ -214,22 +215,37 @@ test('D2: mantiene la exigencia de booleano ante cambios explícitos', () => {
   )
 })
 
-test('créditos aplica a reactivaciones, reimpresión QR y cliente antiguo', () => {
-  assert.equal(isCreditosEligible({ tipo_activacion: 'reactivacion' }), true)
-  assert.equal(isCreditosEligible({ tipo_activacion: 'reactivacion_comercio' }), true)
-  assert.equal(isCreditosEligible({ tipo_activacion: 'reactivacion_transeunte' }), true)
-  assert.equal(isCreditosEligible({ tipo_activacion: 'reimpresion_qr' }), true)
-  assert.equal(isCreditosEligible({ tipo_activacion: 'cliente_antiguo' }), true)
-  assert.equal(isCreditosEligible({ tipo_grupo: 'comercio', tipo_activacion: 'comercio' }), false)
-  assert.equal(isCreditosEligible({ tipo_grupo: 'transeunte', tipo_activacion: 'transeunte' }), false)
+test('créditos/remesas siguen la misma matriz que la app móvil', () => {
+  const cases = [
+    ['tienda_barrio', 'comercio', false, true],
+    ['tienda_barrio', 'no_habilitado', false, false],
+    ['tienda_barrio', 'reactivacion', true, true],
+    ['tienda_barrio', 'limbo', false, true],
+    ['tienda_barrio', 'config_cuenta', false, true],
+    ['tienda_barrio', 'reimpresion_qr', true, true],
+    ['comercio', 'comercio', false, true],
+    ['comercio', 'reactivacion_comercio', true, true],
+    ['comercio', 'limbo', false, true],
+    ['comercio', 'no_habilitado', false, false],
+    ['comercio', 'reimpresion_qr', true, true],
+    ['transeunte', 'transeunte', true, true],
+    ['transeunte', 'reactivacion_transeunte', true, true],
+    ['transeunte', 'cliente_antiguo', true, false],
+    ['cliente_antiguo', 'cliente_antiguo', true, true],
+  ]
+  for (const [tipo_grupo, tipo_activacion, creditos, remesas] of cases) {
+    const row = { tipo_grupo, tipo_activacion }
+    assert.equal(isCreditosEligible(row), creditos, `créditos ${tipo_grupo}/${tipo_activacion}`)
+    assert.equal(isRemesasEligible(row), remesas, `remesas ${tipo_grupo}/${tipo_activacion}`)
+  }
 })
 
-test('remesas aplica solo a comercio nuevo y transeúnte nuevo', () => {
-  assert.equal(isRemesasEligible({ tipo_grupo: 'comercio', tipo_activacion: 'comercio' }), true)
-  assert.equal(isRemesasEligible({ tipo_grupo: 'transeunte', tipo_activacion: 'transeunte' }), true)
-  assert.equal(isRemesasEligible({ tipo_grupo: 'tienda_barrio', tipo_activacion: 'comercio' }), false)
-  assert.equal(isRemesasEligible({ tipo_grupo: 'comercio', tipo_activacion: 'reactivacion_comercio' }), false)
-  assert.equal(isRemesasEligible({ tipo_grupo: 'cliente_antiguo', tipo_activacion: 'cliente_antiguo' }), false)
+test('sin tipo_grupo la elegibilidad usa la categoría inferida de la fila', () => {
+  assert.equal(isRemesasEligible({ base_activacion: 'tienda_barrio', tipo_activacion: 'config_cuenta' }), true)
+  assert.equal(isCreditosEligible({ base_activacion: 'limbo', tipo_activacion: 'limbo' }), false)
+  assert.equal(isRemesasEligible({ base_activacion: 'tienda_barrio', tipo_activacion: 'limbo' }), true)
+  assert.equal(isCreditosEligible({ tipo_activacion: 'desconocido' }), false)
+  assert.equal(isRemesasEligible(), false)
 })
 
 test('rechaza créditos/remesas true cuando el tipo no es elegible', () => {
@@ -242,7 +258,7 @@ test('rechaza créditos/remesas true cuando el tipo no es elegible', () => {
   )
   assert.match(
     validateActivationClassification({
-      tipo_grupo: 'tienda_barrio', tipo_activacion: 'comercio', tamano_tienda: 'Pequeña', remesas: true,
+      tipo_grupo: 'tienda_barrio', tipo_activacion: 'no_habilitado', tamano_tienda: 'Pequeña', remesas: true,
     }, commerce),
     /Remesas no aplica/,
   )
@@ -267,7 +283,7 @@ test('preserva créditos históricos aunque el tipo ya no sea elegible', () => {
   const editOnly = { ...legacy, telefono_cliente: '71111111' }
   assert.equal(validateActivationEdit(editOnly, 'Actualiza telefono', legacy), null)
   assert.match(
-    validateActivationEdit({ ...legacy, tipo_grupo: 'transeunte', tipo_activacion: 'transeunte' }, 'Cambia tipo', legacy),
+    validateActivationEdit({ ...legacy, tipo_activacion: 'limbo' }, 'Cambia tipo', legacy),
     /Créditos no aplica/,
   )
 })
@@ -281,4 +297,12 @@ test('editar otros campos preserva creditos/remesas y no los limpia al cambiar t
   assert.equal(validateActivationEdit(editOnly, 'Actualiza telefono', base), null)
   assert.equal(normalizeActivationClassification(editOnly, base).creditos, true)
   assert.equal(normalizeActivationClassification({ ...base, tipo_grupo: 'transeunte', tipo_activacion: 'transeunte' }, base).creditos, true)
+})
+
+test('la segunda foto se llama Reporte solo en no habilitado de tienda de barrio y comercio', () => {
+  assert.equal(secondaryPhotoLabel({ tipo_grupo: 'tienda_barrio', tipo_activacion: 'no_habilitado' }), 'Reporte')
+  assert.equal(secondaryPhotoLabel({ tipo_grupo: 'comercio', tipo_activacion: 'No Habilitado' }), 'Reporte')
+  assert.equal(secondaryPhotoLabel({ tipo_grupo: 'comercio', tipo_activacion: 'comercio' }), 'Cash-In')
+  assert.equal(secondaryPhotoLabel({ tipo_grupo: 'transeunte', tipo_activacion: 'transeunte' }), 'Cash-In')
+  assert.equal(secondaryPhotoLabel(), 'Cash-In')
 })

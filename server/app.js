@@ -486,7 +486,7 @@ function resolveActivacionesBucket(env) {
 
 async function createActivationSignedPhotoMap(adminSupabase, bucketName, rows) {
   const entries = [...new Set(
-    rows.flatMap((row) => [row.foto_url, row.foto_cash_in, row.foto_cashin]).filter(Boolean)
+    rows.flatMap((row) => [row.foto_url, row.foto_cash_in]).filter(Boolean)
   )].map((value) => [value, resolveStorageObjectPathFromFotoUrl(value, bucketName)])
     .filter(([, path]) => path)
   if (!entries.length) return new Map()
@@ -511,7 +511,7 @@ async function attachActivationSignedPhotos(adminSupabase, bucketName, rows, evi
   return rows.map((row) => ({
     ...row,
     foto_url_signed: signed.get(row.foto_url) ?? null,
-    foto_cash_in_signed: signed.get(row.foto_cash_in) ?? signed.get(row.foto_cashin) ?? null,
+    foto_cash_in_signed: signed.get(row.foto_cash_in) ?? null,
     foto_url_evidencia: buildEvidenceLinkPath(evidenceSecret, row, 'principal', bucketName),
     foto_cash_in_evidencia: buildEvidenceLinkPath(evidenceSecret, row, 'cash-in', bucketName),
   }))
@@ -536,7 +536,7 @@ function buildEvidenceLinkPath(secret, row, tipo, bucketName) {
     return null
   }
 
-  const storedValue = tipo === 'principal' ? row.foto_url : (row.foto_cash_in ?? row.foto_cashin)
+  const storedValue = tipo === 'principal' ? row.foto_url : row.foto_cash_in
   const objectPath = resolveStorageObjectPathFromFotoUrl(storedValue, bucketName)
 
   if (!objectPath) {
@@ -1248,7 +1248,7 @@ export function createAdminApiApp({ env = process.env, adminSupabase: injectedSu
       return
     }
 
-    const storedValue = tipo === 'principal' ? row.foto_url : (row.foto_cash_in ?? row.foto_cashin)
+    const storedValue = tipo === 'principal' ? row.foto_url : row.foto_cash_in
     const objectPath = resolveStorageObjectPathFromFotoUrl(storedValue, activacionesBucket)
 
     if (!objectPath || !verifyEvidenceToken(env.EVIDENCE_LINK_SECRET, activacionId, tipo, objectPath, token)) {

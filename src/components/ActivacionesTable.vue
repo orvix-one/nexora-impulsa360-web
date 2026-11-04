@@ -25,6 +25,7 @@ import {
   isGeneralCommerce,
   isRemesasEligible,
   normalizeActivationClassification,
+  secondaryPhotoLabel,
   validateActivationEdit,
   validateActivationTextLengths,
 } from '../lib/activationEditing'
@@ -215,7 +216,8 @@ function esUrl(value) {
   return typeof value === 'string' && /^https?:\/\//i.test(value)
 }
 
-function etiquetaCampo(key) {
+function etiquetaCampo(key, row = {}) {
+  if (key === 'foto_cash_in') return `Foto ${secondaryPhotoLabel(row)}`
   const especiales = {
     id: 'ID del registro', usuario_id: 'ID del usuario', usuario_email: 'Correo del activador',
     created_at: 'Fecha de registro',
@@ -291,7 +293,7 @@ const seccionesDetalleConfig = [
   { title: 'Datos del cliente', keys: ['nombres_cliente', 'apellidos_cliente', 'ci_cliente', 'telefono_cliente', 'email_cliente'] },
   { title: 'Informacion de la activacion', keys: ['tipo_activacion', 'descargo_app', 'registro', 'cash_in', 'cash_out', 'p2p', 'qr_fisico', 'respaldo', 'creditos', 'remesas'] },
   { title: 'Informacion del comercio o tienda', keys: ['nombre_comercio', 'comercio', 'cliente', 'tipo_comercio', 'tamano_tienda', 'tipo_tienda', 'rubro_comercio', 'rubro_comercio_otro', 'comercio_fuera_mercado', 'es_plaza_temporal', 'plaza_temporal'] },
-  { title: 'Evidencias y fotografias', keys: ['foto_url', 'foto_cash_in', 'foto_cashin'] },
+  { title: 'Evidencias y fotografias', keys: ['foto_url', 'foto_cash_in'] },
   { title: 'Ubicacion', keys: ['latitud', 'longitud', 'direccion', 'ubicacion'] },
   { title: 'Errores u observaciones', keys: ['hubo_error', 'tipo_error', 'descripcion_error', 'observaciones'] },
   { title: 'Informacion tecnica del registro', keys: ['id', 'usuario_email', 'created_at', 'updated_at'] },
@@ -308,7 +310,7 @@ const seccionesDetalle = computed(() => {
       .filter((key) => key === 'ciudad_activacion' || tieneValor(row[key]) || siempreVisibles.has(key))
       .map((key) => ({
         key,
-        label: etiquetaCampo(key),
+        label: etiquetaCampo(key, row),
         value: key === 'ciudad_activacion'
           ? etiquetaCiudadActivacion(row)
           : (siempreVisibles.has(key) ? row[key] === true : row[key]),
@@ -319,7 +321,7 @@ const seccionesDetalle = computed(() => {
   const ocultos = tieneValor(row.usuario_email) ? new Set(['usuario_id']) : new Set()
   const extras = Object.entries(row)
     .filter(([key, value]) => !usedKeys.has(key) && !ocultos.has(key) && tieneValor(value))
-    .map(([key, value]) => ({ key, label: etiquetaCampo(key), value, signedUrl: getFotoSignedUrl(row, key), image: key.toLowerCase().includes('foto') }))
+    .map(([key, value]) => ({ key, label: etiquetaCampo(key, row), value, signedUrl: getFotoSignedUrl(row, key), image: key.toLowerCase().includes('foto') }))
   sections.at(-1).fields.push(...extras)
   return sections.filter((section) => section.fields.length)
 })
@@ -331,7 +333,7 @@ function getClienteComercio(activacion) {
 
 function getFotoSignedUrl(row, key) {
   if (key === 'foto_url') return row.foto_url_signed ?? ''
-  if (key === 'foto_cash_in' || key === 'foto_cashin') return row.foto_cash_in_signed ?? ''
+  if (key === 'foto_cash_in') return row.foto_cash_in_signed ?? ''
   return ''
 }
 
@@ -395,6 +397,7 @@ const esActivacionComercio = computed(() => isGeneralCommerce(
   formularioEdicion.value.tipo_activacion,
 ))
 const esTiendaBarrio = computed(() => formularioEdicion.value.tipo_grupo === 'tienda_barrio')
+const etiquetaFotoSecundaria = computed(() => secondaryPhotoLabel(activacionSeleccionada.value ?? {}))
 const mostrarCreditos = computed(() => isCreditosEligible(formularioEdicion.value) || formularioEdicion.value.creditos === true)
 const mostrarRemesas = computed(() => isRemesasEligible(formularioEdicion.value) || formularioEdicion.value.remesas === true)
 const motivoEdicionFaltante = computed(() => !motivoEdicion.value.trim())
@@ -527,7 +530,7 @@ async function reemplazarFoto(tipo) {
     emit('activacion-actualizada', { activation: payload.activation })
     limpiarFotosSeleccionadas()
     if (payload.warning) notifyWarning(payload.warning)
-    else notifySuccess(tipo === 'principal' ? 'Evidencia principal reemplazada.' : 'Evidencia Cash-In reemplazada.')
+    else notifySuccess(tipo === 'principal' ? 'Evidencia principal reemplazada.' : `Evidencia ${etiquetaFotoSecundaria.value} reemplazada.`)
   } catch (error) {
     notifyError(getErrorMessage(error))
   } finally {
@@ -724,7 +727,7 @@ const columnasExportacion = [
   ['Es Plaza Temporal', (row) => row.es_plaza_temporal == null ? '' : row.es_plaza_temporal ? 'Si' : 'No'],
   ['Plaza Temporal', (row) => row.plaza_temporal],
   ['Foto URL', (row) => absoluteEvidenceUrl(row.foto_url_evidencia)],
-  ['Foto Cash-In', (row) => absoluteEvidenceUrl(row.foto_cash_in_evidencia)],
+  ['Foto Cash-In / Reporte', (row) => absoluteEvidenceUrl(row.foto_cash_in_evidencia)],
   ['Latitud', (row) => row.latitud],
   ['Longitud', (row) => row.longitud],
   ['Usuario ID', (row) => row.usuario_id],
@@ -767,7 +770,7 @@ const columnasExcelPersonalizado = [
   ['Teléfono', (row) => row.telefono_cliente],
   ['Correo', (row) => row.email_cliente],
   ['Foto de la Activación', (row) => evidenciaHyperlinkCell(row.foto_url_evidencia)],
-  ['Foto Cash-In', (row) => evidenciaHyperlinkCell(row.foto_cash_in_evidencia)],
+  ['Foto Cash-In / Reporte', (row) => evidenciaHyperlinkCell(row.foto_cash_in_evidencia)],
   ...checklistExcel,
   ['Hubo Error', (row) => valorBooleano(row.hubo_error)],
   ['Tipo de Error', (row) => row.tipo_error],
@@ -1058,7 +1061,7 @@ async function descargarExcelPersonalizado() {
               <label v-if="formularioEdicion.hubo_error"><span class="field-label">Tipo de error</span><select v-model="formularioEdicion.tipo_error" class="input-texto"><option value="">Selecciona tipo</option><option v-if="formularioEdicion.tipo_error && !ACTIVATION_ERROR_TYPES.includes(formularioEdicion.tipo_error)" :value="formularioEdicion.tipo_error">Histórico: {{ formularioEdicion.tipo_error }}</option><option v-for="tipoError in ACTIVATION_ERROR_TYPES" :key="tipoError" :value="tipoError">{{ tipoError }}</option></select></label>
               <label v-if="formularioEdicion.hubo_error && formularioEdicion.tipo_error === 'Otro'" class="edicion-field-wide"><span class="field-label">Descripcion del error</span><textarea v-model="formularioEdicion.descripcion_error" class="input-texto" rows="3"></textarea></label>
               <label v-if="isAdmin"><span class="field-label">Evidencia principal</span><input ref="inputFotoPrincipal" type="file" accept="image/jpeg,image/png,image/webp" class="input-texto" @change="seleccionarFoto('principal', $event)"><button type="button" class="boton boton-editar" :disabled="!fotoPrincipalArchivo" @click="reemplazarFoto('principal')">{{ reemplazandoFoto === 'principal' ? 'Reemplazando...' : 'Reemplazar evidencia' }}</button></label>
-              <label v-if="isAdmin"><span class="field-label">Evidencia Cash-In</span><input ref="inputFotoCashIn" type="file" accept="image/jpeg,image/png,image/webp" class="input-texto" @change="seleccionarFoto('cash-in', $event)"><button type="button" class="boton boton-editar" :disabled="!fotoCashInArchivo" @click="reemplazarFoto('cash-in')">{{ reemplazandoFoto === 'cash-in' ? 'Reemplazando...' : 'Reemplazar Cash-In' }}</button></label>
+              <label v-if="isAdmin"><span class="field-label">Evidencia {{ etiquetaFotoSecundaria }}</span><input ref="inputFotoCashIn" type="file" accept="image/jpeg,image/png,image/webp" class="input-texto" @change="seleccionarFoto('cash-in', $event)"><button type="button" class="boton boton-editar" :disabled="!fotoCashInArchivo" @click="reemplazarFoto('cash-in')">{{ reemplazandoFoto === 'cash-in' ? 'Reemplazando...' : `Reemplazar ${etiquetaFotoSecundaria}` }}</button></label>
               <label><span class="field-label">Es plaza temporal</span><select v-model="formularioEdicion.es_plaza_temporal" class="input-texto"><option :value="false">No</option><option :value="true">Si</option></select></label>
               <label v-if="formularioEdicion.es_plaza_temporal"><span class="field-label">Plaza temporal</span><input v-model="formularioEdicion.plaza_temporal" class="input-texto"></label>
               <label class="edicion-field-wide"><span class="field-label">Motivo de edicion</span><textarea v-model="motivoEdicion" class="input-texto" rows="3" placeholder="Obligatorio"></textarea></label>
