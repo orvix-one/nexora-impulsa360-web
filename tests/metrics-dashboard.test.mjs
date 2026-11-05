@@ -38,7 +38,7 @@ async function mount(authorizedRows = rows, catalog = users, catalogError = fals
     URL: { createObjectURL: (value) => { blob = value; return 'blob:test' }, revokeObjectURL: () => {} },
     document: { createElement: () => ({ click() {} }) },
   }
-  const vm = new Function(...Object.keys(deps), `${setup}\nreturn { dashboard, opciones, tarjetas, filtroLider, filtroActivador, filtroDesde, filtroHasta, filtroPlaza, filtroTipo, filtroEquipo, rankingPaginado, rankingTotalPages, rankingSiguiente, porcentajeDelTotal, exportarDashboard, errorMsg };`)(...Object.values(deps))
+  const vm = new Function(...Object.keys(deps), `${setup}\nreturn { dashboard, opciones, tarjetas: computed(() => gruposTarjetas.value.flatMap((grupo) => grupo.tarjetas)), filtroLider, filtroActivador, filtroDesde, filtroHasta, filtroPlaza, filtroTipo, filtroEquipo, rankingPaginado, rankingTotalPages, rankingSiguiente, porcentajeDelTotal, exportarDashboard, errorMsg };`)(...Object.values(deps))
   await mounted()
   return { ...vm, csv: async () => { blob = null; vm.exportarDashboard(); return blob ? await blob.text() : '' } }
 }
@@ -304,12 +304,12 @@ test('promedios diario y semanal usan días calendario del intervalo seleccionad
   const { calendarioDiario, calendarioSemanal, diasPeriodo } = vm.dashboard.value.promedios
   assert.equal(diasPeriodo, 3) // 02, 03 y 04 inclusive
   assert.equal(calendarioDiario, 1) // 3 activaciones / 3 días
-  assert.equal(calendarioSemanal, 7) // 3 / (3/7)
+  assert.equal(calendarioSemanal, 3) // período < 7 días: sin extrapolar
   const diaria = vm.tarjetas.value.find((card) => card.key === 'promedio-diario')
   const semanal = vm.tarjetas.value.find((card) => card.key === 'promedio-semanal')
   assert.equal(diaria.value, '1,0')
-  assert.equal(semanal.value, '7,0')
-  assert.equal(diaria.note, '3 días calendario')
+  assert.equal(semanal.value, '3,0')
+  assert.equal(diaria.note, 'Del 2/10 al 4/10')
 })
 
 test('promedios incluyen días sin activaciones en el denominador', async () => {
@@ -324,9 +324,9 @@ test('promedios incluyen días sin activaciones en el denominador', async () => 
   const { calendarioDiario, calendarioSemanal, diasPeriodo } = vm.dashboard.value.promedios
   assert.equal(diasPeriodo, 5) // incluye el 02, 03 y 04 sin activaciones
   assert.equal(calendarioDiario, 0.4) // 2 / 5
-  assert.equal(calendarioSemanal, 2.8) // 2 / (5/7)
+  assert.equal(calendarioSemanal, 2) // período < 7 días: sin extrapolar
   assert.equal(vm.tarjetas.value.find((card) => card.key === 'promedio-diario').value, '0,4')
-  assert.equal(vm.tarjetas.value.find((card) => card.key === 'promedio-semanal').value, '2,8')
+  assert.equal(vm.tarjetas.value.find((card) => card.key === 'promedio-semanal').value, '2,0')
 })
 
 test('promedios recalculan con filtros no de fecha sobre el mismo período', async () => {
@@ -375,13 +375,21 @@ test('sin fechas seleccionadas los promedios usan el mes actual hasta hoy', asyn
   const parts = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone: 'America/La_Paz', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date()).filter((part) => part.type !== 'literal').map((part) => [part.type, part.value]))
   const hoy = `${parts.year}-${parts.month}-${parts.day}`
   const mesInicio = `${parts.year}-${parts.month}-01`
-  const { calendarioDiario, calendarioSemanal, diasPeriodo, periodoDesde, periodoHasta, total } = { ...vm.dashboard.value.promedios, total: vm.dashboard.value.kpis.total }
+  const { calendarioDiario, calendarioSemanal, diasPeriodo, periodoDesde, periodoHasta, total } = { ...vm.dashboard.value.promedios, total: vm.dashboard.value.kpis.enPeriodo }
   assert.equal(periodoDesde, mesInicio)
   assert.equal(periodoHasta, hoy)
   const diasEsperados = Math.round((Date.parse(`${hoy}T12:00:00Z`) - Date.parse(`${mesInicio}T12:00:00Z`)) / 86400000) + 1
   assert.equal(diasPeriodo, diasEsperados)
   assert.equal(calendarioDiario, total / diasEsperados)
-  assert.equal(calendarioSemanal, total / (diasEsperados / 7))
+  assert.equal(calendarioSemanal, total / (Math.max(diasEsperados, 7) / 7))
+})
+
+test('sin fechas seleccionadas los promedios ignoran activaciones fuera del mes actual', async () => {
+  const vm = await mount([{ ...rows[0], id: 'd0000000-0000-0000-0000-000000000001', fecha_activacion: '2020-01-15' }])
+  await assertCount(vm, 1)
+  assert.equal(vm.dashboard.value.kpis.enPeriodo, 0)
+  assert.equal(vm.dashboard.value.promedios.calendarioDiario, 0)
+  assert.equal(vm.dashboard.value.promedios.calendarioSemanal, 0)
 })
 
 test('la tarjeta Cash-In se oculta pero conserva cash_in en datos y CSV', async () => {

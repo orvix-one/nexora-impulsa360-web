@@ -6,6 +6,7 @@ import MetricsHeatMap from './MetricsHeatMap.vue'
 import { ciudadActivacion, etiquetaCiudadActivacion, normalizarPlazaClave, SIN_CIUDAD_REGISTRADA } from '../lib/plazas'
 import { neutralizeSpreadsheetFormula } from '../lib/exportSafety'
 import { logClientError } from '../lib/logging'
+import { esDiaNoLaboral } from '../lib/feriadosBolivia'
 
 const activaciones = ref([])
 const loading = ref(true)
@@ -371,7 +372,7 @@ const opciones = computed(() => {
 const dashboard = computed(() => {
   const rows = [], points = []
   const maps = { dia: new Map(), semana: new Map(), mes: new Map(), plaza: new Map(), activador: new Map(), tipo: new Map(), lider: new Map(), clasificacion: new Map(), errores: new Map() }
-  const kpis = { total: 0, hoy: 0, semana: 0, mes: 0, cashIn: 0, errores: 0, tiendas: 0, comercios: 0 }
+  const kpis = { total: 0, enPeriodo: 0, hoy: 0, semana: 0, mes: 0, cashIn: 0, errores: 0, tiendas: 0, comercios: 0 }
   // Ventana de promedios: sin fechas, mes actual hasta hoy (America/La_Paz);
   // con fechas, el intervalo seleccionado sin incluir días futuros.
   const periodoDesde = filtroDesde.value || `${monthKey}-01`
@@ -409,6 +410,7 @@ const dashboard = computed(() => {
     if (lider !== 'none' && !nombresLider.has(lider)) nombresLider.set(lider, liderDisplay)
     if (tipo === 'comercio') kpis.comercios += 1
     kpis.total += 1
+    if (fecha >= periodoDesde && fecha <= periodoHasta) kpis.enPeriodo += 1
     if (fecha === todayKey) kpis.hoy += 1
     if (fecha >= weekStartKey && fecha <= todayKey) kpis.semana += 1
     if (fecha.startsWith(monthKey)) kpis.mes += 1
@@ -448,8 +450,9 @@ const dashboard = computed(() => {
     semanal: maps.semana.size ? kpis.total / maps.semana.size : 0,
     mensual: maps.mes.size ? kpis.total / maps.mes.size : 0,
     // Promedios por días calendario (incluye días sin activaciones).
-    calendarioDiario: diasPeriodo > 0 ? kpis.total / diasPeriodo : 0,
-    calendarioSemanal: diasPeriodo > 0 ? kpis.total / (diasPeriodo / 7) : 0,
+    calendarioDiario: diasPeriodo > 0 ? kpis.enPeriodo / diasPeriodo : 0,
+    // Con menos de 7 días no se extrapola: el promedio semanal es el total observado.
+    calendarioSemanal: diasPeriodo > 0 ? kpis.enPeriodo / (Math.max(diasPeriodo, 7) / 7) : 0,
     diasPeriodo,
     periodoDesde,
     periodoHasta,
@@ -506,30 +509,82 @@ const rankingPaginado = computed(() => {
 })
 const rankingStartIndex = computed(() => (rankingSafePage.value - 1) * rankingPageSize)
 
+// Paso "redondo" más chico que deja como máximo 8 intervalos; el tope es el siguiente múltiplo del paso.
+const PASOS_EJE_Y = [5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000]
+function escalaEjeY(maximo) {
+  const paso = PASOS_EJE_Y.find((candidato) => Math.ceil(maximo / candidato) <= 8) ?? Math.pow(10, Math.ceil(Math.log10(maximo / 8)))
+  return { paso, tope: Math.max(paso, Math.ceil(maximo / paso) * paso) }
+}
+
+// Rellena con 0 los días sin activaciones entre la primera y la última fecha para no unir días no consecutivos.
+function serieDiariaContinua(porDia) {
+  const conFecha = porDia.filter((item) => /^\d{4}-\d{2}-\d{2}$/.test(item.label))
+  if (!conFecha.length) return []
+  const valores = new Map(conFecha.map((item) => [item.label, item.value]))
+  const serie = []
+  const cursor = new Date(`${conFecha[0].label}T12:00:00Z`)
+  const fin = conFecha[conFecha.length - 1].label
+  for (let fecha = conFecha[0].label; fecha <= fin; cursor.setUTCDate(cursor.getUTCDate() + 1), fecha = cursor.toISOString().slice(0, 10)) {
+    serie.push({ label: fecha, value: valores.get(fecha) ?? 0 })
+  }
+  return serie
+}
+
 const lineChart = computed(() => {
-  const data = dashboard.value.porDia
-  const width = 920, height = 260, padX = 42, padY = 28
-  const max = Math.max(1, ...data.map((item) => item.value))
+  const data = serieDiariaContinua(dashboard.value.porDia)
+  const width = 920, height = 300, padX = 42, padTop = 30, padBottom = 56
+  const plotBottom = height - padBottom
+  const { tope: max, paso } = escalaEjeY(Math.max(1, ...data.map((item) => item.value)))
   const step = data.length > 1 ? (width - padX * 2) / (data.length - 1) : 0
+  const yDe = (value) => plotBottom - (value / max) * (plotBottom - padTop)
   const points = data.map((item, index) => {
     const x = data.length > 1 ? padX + index * step : width / 2
-    const y = height - padY - (item.value / max) * (height - padY * 2)
-    return { ...item, x, y }
+    const y = yDe(item.value)
+    const anterior = data[index - 1]?.value ?? item.value
+    const siguiente = data[index + 1]?.value ?? item.value
+    const esPico = item.value >= anterior && item.value >= siguiente
+    const conFecha = index % 2 === 0 || index === data.length - 1
+    return { ...item, x, y, conFecha, noLaboral: esDiaNoLaboral(item.label), valorY: esPico ? y - 9 : y + 16 }
   })
-  return { width, height, points, polyline: points.map((point) => `${point.x},${point.y}`).join(' '), max }
+  // Promedio móvil de 7 días: solo desde el 7.º día, para no promediar ventanas incompletas.
+  const promedioMovil = points.slice(6).map((point, i) => {
+    const valor = points.slice(i, i + 7).reduce((suma, p) => suma + p.value, 0) / 7
+    return { x: point.x, y: yDe(valor), valor }
+  })
+  const ultimoPromedio = promedioMovil[promedioMovil.length - 1] ?? null
+  const anchoBanda = step || 24
+  const ejeY = Array.from({ length: max / paso + 1 }, (_, i) => max - i * paso).map((value) => ({ value, y: yDe(value) }))
+  return { width, height, plotBottom, padTop, anchoBanda, ejeY, points, promedioMovil: promedioMovil.map((p) => `${p.x},${p.y}`).join(' '), ultimoPromedio, polyline: points.map((point) => `${point.x},${point.y}`).join(' '), max }
 })
 
-const tarjetas = computed(() => [
-  { key: 'total', icon: '◎', label: 'Activaciones totales', value: formatNumber(dashboard.value.kpis.total), note: 'Registros filtrados' },
-  { key: 'hoy', icon: '◷', label: 'Hoy', value: formatNumber(dashboard.value.kpis.hoy), note: todayKey },
-  { key: 'semana', icon: '▦', label: 'Semana', value: formatNumber(dashboard.value.kpis.semana), note: `Desde ${formatDate(weekStartKey)}` },
-  { key: 'mes', icon: '□', label: 'Mes', value: formatNumber(dashboard.value.kpis.mes), note: formatMonth(monthKey) },
-  { key: 'promedio-diario', icon: '∿', label: 'Promedio diario', value: formatPromedio(dashboard.value.promedios.calendarioDiario), note: `${dashboard.value.promedios.diasPeriodo} días calendario` },
-  { key: 'promedio-semanal', icon: '∿', label: 'Promedio semanal', value: formatPromedio(dashboard.value.promedios.calendarioSemanal), note: `Sobre ${dashboard.value.promedios.diasPeriodo} días` },
-  { key: 'errores', icon: '!', label: 'Errores', value: formatNumber(dashboard.value.kpis.errores), note: 'Registros con error' },
-  { key: 'tiendas', icon: '⌂', label: 'Tiendas', value: formatNumber(dashboard.value.kpis.tiendas), note: 'Clasificación barrio' },
-  { key: 'comercios', icon: '⌂', label: 'Comercios', value: formatNumber(dashboard.value.kpis.comercios), note: 'Registros con tipo comercio' },
-])
+const fechaCorta = new Intl.DateTimeFormat('es-BO', { weekday: 'short', day: '2-digit', month: '2-digit', timeZone: 'UTC' })
+const mesLargo = new Intl.DateTimeFormat('es-BO', { month: 'long', year: 'numeric', timeZone: 'UTC' })
+function capitalizar(value) { return value.charAt(0).toLocaleUpperCase('es') + value.slice(1) }
+function formatDiaSemana(fecha) { return capitalizar(fechaCorta.format(new Date(`${fecha}T12:00:00Z`)).replace(/[.,]/g, '')) }
+function formatMesLargo(mes) { return capitalizar(mesLargo.format(new Date(`${mes}-15T12:00:00Z`))) }
+function formatPorcentaje(parte, total) { return `${total ? ((parte / total) * 100).toFixed(1).replace('.', ',') : '0,0'}%` }
+
+const gruposTarjetas = computed(() => {
+  const { kpis, promedios } = dashboard.value
+  const rango = `Del ${formatShortDate(promedios.periodoDesde)} al ${formatShortDate(promedios.periodoHasta)}`
+  return [
+    { key: 'volumen', label: 'Volumen', tarjetas: [
+      { key: 'total', icon: 'Σ', label: 'Total', value: formatNumber(kpis.total), note: 'En el filtro actual' },
+      { key: 'hoy', icon: '◷', label: 'Hoy', value: formatNumber(kpis.hoy), note: formatDiaSemana(todayKey) },
+      { key: 'semana', icon: '▦', label: 'Esta semana', value: formatNumber(kpis.semana), note: `Desde ${formatDiaSemana(weekStartKey)}` },
+      { key: 'mes', icon: '▣', label: 'Este mes', value: formatNumber(kpis.mes), note: formatMesLargo(monthKey) },
+    ] },
+    { key: 'ritmo', label: 'Ritmo', tarjetas: [
+      { key: 'promedio-diario', icon: '↗', label: 'Promedio por día', value: formatPromedio(promedios.calendarioDiario), note: rango },
+      { key: 'promedio-semanal', icon: '⇗', label: 'Promedio por semana', value: formatPromedio(promedios.calendarioSemanal), note: rango },
+      { key: 'errores', icon: '!', label: 'Tasa de error', value: formatPorcentaje(kpis.errores, kpis.total), note: `${formatNumber(kpis.errores)} registros con error` },
+    ] },
+    { key: 'lugar', label: 'Lugar', tarjetas: [
+      { key: 'comercios', icon: '◫', label: 'Comercios', value: formatNumber(kpis.comercios), note: 'Registros con tipo comercio' },
+      { key: 'tiendas', icon: '⌂', label: 'Tiendas', value: formatNumber(kpis.tiendas), note: 'Clasificación barrio' },
+    ] },
+  ]
+})
 const hayFiltros = computed(() => Boolean(filtroDesde.value || filtroHasta.value || filtroPlaza.value || filtroActivador.value || filtroTipo.value || filtroLider.value || filtroEquipo.value))
 function limpiarFiltros() { filtroDesde.value = ''; filtroHasta.value = ''; filtroPlaza.value = ''; filtroActivador.value = ''; filtroTipo.value = ''; filtroLider.value = ''; filtroEquipo.value = '' }
 function anchoBarra(value, values) { const max = Math.max(1, ...values.map((item) => item.value)); return `${Math.max(3, (value / max) * 100)}%` }
@@ -565,9 +620,9 @@ function exportarDashboard() {
     </div></section>
     <p v-if="loading" class="panel-empty">Cargando indicadores...</p><p v-else-if="errorMsg" class="mensaje-error">{{ errorMsg }}</p><p v-else-if="!dashboard.rows.length && !dashboard.topActivadores.length" class="panel-empty">No hay activaciones para los filtros seleccionados.</p>
     <div v-else class="metrics-saas-content">
-      <section class="metrics-kpi-grid metrics-kpi-grid-compact"><article v-for="card in tarjetas" :key="card.key" class="metrics-kpi-card" :title="`${card.label}: ${card.value}`"><span class="metrics-kpi-icon">{{ card.icon }}</span><div><p class="metrics-kpi-label">{{ card.label }}</p><p class="metrics-kpi-value">{{ card.value }}</p><p class="metrics-kpi-note">{{ card.note }}</p></div></article></section>
+      <div class="metrics-kpi-groups"><section v-for="grupo in gruposTarjetas" :key="grupo.key" :class="`metrics-kpi-group metrics-kpi-group-${grupo.key}`"><p class="metrics-kpi-group-label">{{ grupo.label }}</p><div class="metrics-kpi-grid metrics-kpi-grid-compact" :style="{ '--cols': grupo.tarjetas.length }"><article v-for="card in grupo.tarjetas" :key="card.key" class="metrics-kpi-card" :title="`${card.label}: ${card.value}`"><span class="metrics-kpi-icon">{{ card.icon }}</span><div><p class="metrics-kpi-label">{{ card.label }}</p><p class="metrics-kpi-value">{{ card.value }}</p><p class="metrics-kpi-note">{{ card.note }}</p></div></article></div></section></div>
       <section class="metrics-line-grid">
-        <article class="metrics-chart-card metrics-line-card"><h3>Activaciones por Fecha</h3><p>Evolución diaria del periodo filtrado.</p><div class="chart-legend"><span class="legend-dot"></span><span>Activaciones filtradas</span></div><div class="metrics-line-wrap"><svg class="metrics-line-svg" :viewBox="`0 0 ${lineChart.width} ${lineChart.height}`" role="img" aria-label="Activaciones por fecha"><g class="line-grid"><line v-for="n in 5" :key="n" x1="42" :y1="28 + (n - 1) * 51" x2="878" :y2="28 + (n - 1) * 51"></line></g><polyline v-if="lineChart.points.length" :points="lineChart.polyline" fill="none" stroke="var(--ru-primary)" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"></polyline><g v-for="point in lineChart.points" :key="point.label"><title>{{ formatDate(point.label) }}: {{ formatNumber(point.value) }} activaciones</title><circle :cx="point.x" :cy="point.y" r="4.5" fill="var(--ru-primary)"></circle><text :x="point.x" :y="point.y - 9" text-anchor="middle">{{ point.value }}</text><text class="line-date" :x="point.x" y="246" text-anchor="middle">{{ formatShortDate(point.label) }}</text></g></svg></div></article>
+        <article class="metrics-chart-card metrics-line-card"><h3>Activaciones por Fecha</h3><p>Evolución diaria del periodo filtrado.</p><div class="chart-legend"><span class="legend-dot"></span><span>Activaciones</span><template v-if="lineChart.ultimoPromedio"><span class="legend-line-avg"></span><span>Promedio semanal</span></template><span class="legend-swatch-off"></span><span>Fin de semana / feriado</span></div><div class="metrics-line-wrap"><svg class="metrics-line-svg" :viewBox="`0 0 ${lineChart.width} ${lineChart.height}`" role="img" aria-label="Activaciones por fecha"><g class="line-off-days"><rect v-for="point in lineChart.points.filter((p) => p.noLaboral)" :key="`off-${point.label}`" :x="point.x - lineChart.anchoBanda / 2" :y="lineChart.padTop" :width="lineChart.anchoBanda" :height="lineChart.plotBottom - lineChart.padTop"></rect></g><g class="line-grid"><line v-for="tick in lineChart.ejeY" :key="`grid-${tick.value}`" x1="42" :y1="tick.y" x2="878" :y2="tick.y"></line></g><g class="line-axis"><text v-for="tick in lineChart.ejeY" :key="`tick-${tick.value}`" x="34" :y="tick.y + 3" text-anchor="end">{{ formatNumber(tick.value) }}</text></g><polyline v-if="lineChart.points.length" :points="lineChart.polyline" fill="none" stroke="var(--ru-primary)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"></polyline><g v-if="lineChart.ultimoPromedio" class="line-avg"><polyline :points="lineChart.promedioMovil" fill="none" stroke="var(--ru-accent)" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"></polyline><text :x="lineChart.ultimoPromedio.x + 6" :y="lineChart.ultimoPromedio.y + 3" text-anchor="start">{{ formatPromedio(lineChart.ultimoPromedio.valor) }}</text></g><g v-for="point in lineChart.points" :key="point.label"><title>{{ formatDate(point.label) }}: {{ formatNumber(point.value) }} activaciones</title><circle :cx="point.x" :cy="point.y" r="3.5" fill="var(--ru-primary)"></circle><text class="line-value" :x="point.x" :y="point.valorY" text-anchor="middle">{{ point.value }}</text><text v-if="point.conFecha" class="line-date" :x="point.x" :y="lineChart.plotBottom + 12" text-anchor="end" :transform="`rotate(-40 ${point.x} ${lineChart.plotBottom + 12})`">{{ formatShortDate(point.label) }}</text></g></svg></div></article>
       </section>
       <section class="metrics-four-grid">
         <article class="metrics-chart-card metrics-small-chart"><h3>Activaciones por Tipo</h3><p>Todos los tipos registrados.</p><div class="chart-legend"><span class="legend-dot"></span><span>Tipos filtrados</span></div><div class="vertical-bars adaptive-bars" :style="{ '--items': dashboard.porTipo.length }"><div v-for="item in dashboard.porTipo" :key="item.label" class="vertical-bar" :title="`${item.label}: ${formatNumber(item.value)} activaciones`"><strong>{{ formatNumber(item.value) }}</strong><span :style="{ height: barHeight(item.value, dashboard.porTipo) }"></span><small>{{ item.label }}</small></div></div></article>
@@ -590,8 +645,31 @@ function exportarDashboard() {
   gap: 1rem;
 }
 
+.metrics-kpi-groups {
+  display: grid;
+  grid-template-columns: 3fr 2fr;
+  gap: 0.9rem 1rem;
+}
+
+.metrics-kpi-group {
+  min-width: 0;
+}
+
+.metrics-kpi-group-volumen {
+  grid-column: 1 / -1;
+}
+
+.metrics-kpi-group-label {
+  margin: 0 0 0.35rem 0.15rem;
+  color: #b7cde4;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
 .metrics-kpi-grid-compact {
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(var(--cols, 4), minmax(0, 1fr));
   gap: 1rem;
 }
 
@@ -702,13 +780,52 @@ function exportarDashboard() {
 
 .metrics-line-svg text {
   fill: var(--ru-primary);
-  font-size: 12px;
+  font-size: 9px;
   font-weight: 700;
 }
 
 .metrics-line-svg .line-date {
   fill: #55728e;
-  font-size: 11px;
+  font-size: 8px;
+  font-weight: 600;
+}
+
+.metrics-line-svg .line-value {
+  paint-order: stroke;
+  stroke: #fbfdff;
+  stroke-width: 2px;
+  stroke-linejoin: round;
+}
+
+.legend-line-avg {
+  width: 0.9rem;
+  height: 2px;
+  margin-left: 0.6rem;
+  border-radius: 2px;
+  background: var(--ru-accent);
+}
+
+.metrics-line-svg .line-avg text {
+  fill: var(--ru-accent);
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.legend-swatch-off {
+  width: 0.8rem;
+  height: 0.65rem;
+  margin-left: 0.6rem;
+  border-radius: 3px;
+  background: #e6edf5;
+}
+
+.line-off-days rect {
+  fill: #e6edf5;
+}
+
+.metrics-line-svg .line-axis text {
+  fill: #7a90a6;
+  font-size: 9px;
   font-weight: 600;
 }
 
@@ -971,8 +1088,12 @@ function exportarDashboard() {
 }
 
 @media (max-width: 1100px) {
+  .metrics-kpi-groups {
+    grid-template-columns: 1fr;
+  }
+
   .metrics-kpi-grid-compact {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .metrics-bottom-grid {
