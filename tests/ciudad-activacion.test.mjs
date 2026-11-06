@@ -10,7 +10,9 @@ import {
 import { generateActivacionesExcel } from '../server/activacionesExcel.js'
 
 const componentSource = readFileSync(new URL('../src/components/ActivacionesTable.vue', import.meta.url), 'utf8')
-const metricsSource = readFileSync(new URL('../src/components/MetricsDashboard.vue', import.meta.url), 'utf8')
+const identidadSource = readFileSync(new URL('../src/lib/metrics/identidad.js', import.meta.url), 'utf8')
+const filtrosMetricasSource = readFileSync(new URL('../src/lib/metrics/filtros.js', import.meta.url), 'utf8')
+const cargaMetricasSource = readFileSync(new URL('../src/lib/metrics/carga.js', import.meta.url), 'utf8')
 const serverExcelSource = readFileSync(new URL('../server/activacionesExcel.js', import.meta.url), 'utf8')
 const plazasSource = readFileSync(new URL('../src/lib/plazas.js', import.meta.url), 'utf8')
 
@@ -156,14 +158,14 @@ test('el listado, el detalle y las exportaciones del portal usan la misma ciudad
 })
 
 test('el dashboard calcula la ciudad solo desde ciudad_activacion', () => {
-  const inicio = metricsSource.indexOf('function plazaTextoBruto(')
-  const fin = metricsSource.indexOf('function plazaEtiqueta(', inicio)
-  const cuerpo = metricsSource.slice(inicio, fin)
-  assert.match(cuerpo, /return ciudadActivacion\(item\)/)
+  const inicio = identidadSource.indexOf('export function plazaKey(')
+  const fin = identidadSource.indexOf('export function plazaRegistro(', inicio)
+  const cuerpo = identidadSource.slice(inicio, fin)
+  assert.match(cuerpo, /ciudadActivacion\(item\)/)
   assert.doesNotMatch(cuerpo, /plaza_efectiva_registro|plaza_base_registro|texto\(item\.plaza\)/)
-  assert.match(metricsSource, /function plazaRegistro\(item\) \{ return etiquetaCiudadActivacion\(item\) \}/)
-  assert.match(metricsSource, /return SIN_CIUDAD_REGISTRADA/)
-  assert.doesNotMatch(metricsSource, /pid:/, 'la ciudad no se resuelve por el UUID de la plaza organizacional')
+  assert.match(identidadSource, /export function plazaRegistro\(item\) \{\n {2}return etiquetaCiudadActivacion\(item\)\n\}/)
+  assert.match(cuerpo, /SIN_CIUDAD_REGISTRADA/)
+  assert.doesNotMatch(identidadSource, /pid:/, 'la ciudad no se resuelve por el UUID de la plaza organizacional')
 })
 
 test('el Excel del servidor filtra y exporta con la misma función de ciudad', () => {
@@ -188,9 +190,9 @@ test('el filtro del listado normaliza la ciudad igual que la exportación', () =
 })
 
 test('el filtro de ciudad une las plazas activas aunque no tengan activaciones', () => {
-  assert.match(metricsSource, /apiRequest\('\/portal\/plazas'\)/)
-  const inicio = metricsSource.indexOf('for (const plaza of plazasCatalogo.value)')
-  const cuerpo = metricsSource.slice(inicio, metricsSource.indexOf('}\n', inicio + 200))
+  assert.match(cargaMetricasSource, /solicitar\('\/portal\/plazas'\)/)
+  const inicio = filtrosMetricasSource.indexOf('for (const plaza of ctx.plazas)')
+  const cuerpo = filtrosMetricasSource.slice(inicio, filtrosMetricasSource.indexOf('}\n', inicio + 200))
   assert.match(cuerpo, /`pkey:\$\{clave\}`/)
   assert.match(cuerpo, /plazas\.set\(key, \{ key, nombre \}\)/)
   assert.match(cuerpo, /!plazas\.has\(key\)/)

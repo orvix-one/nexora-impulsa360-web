@@ -19,7 +19,7 @@ watch(profile, (value) => {
           <div class="brand-copy">
             <p class="brand-kicker">Plataforma Operativa</p>
             <p class="brand-title">Impulsa 360<span class="brand-dot">.</span></p>
-            <p class="brand-subtitle">by RDXTechnology</p>
+            <p class="brand-subtitle">evolucionando</p>
           </div>
         </div>
       </div>

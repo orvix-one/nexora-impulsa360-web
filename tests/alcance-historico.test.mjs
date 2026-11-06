@@ -245,27 +245,27 @@ test('el detalle muestra Correo del activador en lugar de ID del usuario', () =>
   )
 })
 
-const metricsSource = readFileSync(new URL('../src/components/MetricsDashboard.vue', import.meta.url), 'utf8')
+const metricsSource = readFileSync(new URL('../src/lib/metrics/identidad.js', import.meta.url), 'utf8')
 
 test('las metricas reproducen la misma regla de alcance por lider', () => {
-  const inicio = metricsSource.indexOf('function liderKey(item)')
-  const fin = metricsSource.indexOf('function liderEtiqueta', inicio)
+  const inicio = metricsSource.indexOf('export function liderKey(')
+  const fin = metricsSource.indexOf('export function liderEtiqueta', inicio)
   const cuerpo = metricsSource.slice(inicio, fin)
-  assert.match(cuerpo, /item\.lider_id_registro/)
+  assert.match(cuerpo, /\.lider_id_registro/)
   assert.ok(
     cuerpo.indexOf('lider_id_registro') < cuerpo.indexOf('usuario?.lider_id'),
     'el snapshot del registro tiene prioridad sobre el líder actual del creador',
   )
-  assert.match(cuerpo, /return 'none'/, 'sin regla resoluble no se atribuye')
+  assert.match(cuerpo, /: 'none'/, 'sin regla resoluble no se atribuye')
 
   assert.match(
     metricsSource,
-    /if \(registroId && registroId === resolvedKey\.slice\(4\) && nombreRegistro\)/,
+    /if \(registroId && registroId === id && nombreRegistro\)/,
     'el nombre de registro solo se usa cuando coincide con el snapshot; el resto es pertenencia actual',
   )
 
-  const catalogoInicio = metricsSource.indexOf('const catalogoActivadores = computed(')
-  const catalogoFin = metricsSource.indexOf('function estadoNormalizado', catalogoInicio)
+  const catalogoInicio = metricsSource.indexOf('const catalogoActivadores = ')
+  const catalogoFin = metricsSource.indexOf('const catalogoLideres', catalogoInicio)
   assert.doesNotMatch(
     metricsSource.slice(catalogoInicio, catalogoFin),
     /\.estado/,

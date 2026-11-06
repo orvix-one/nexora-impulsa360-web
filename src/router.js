@@ -14,7 +14,13 @@ const routes = [
   },
   {
     path: '/metricas',
-    component: () => import('./components/MetricsDashboard.vue'),
+    component: () => import('./pages/MetricasPage.vue'),
+    children: [
+      { path: '', redirect: (to) => ({ path: '/metricas/resumen', query: to.query }) },
+      { path: 'resumen', component: () => import('./pages/metricas/ResumenTab.vue') },
+      { path: 'equipos', component: () => import('./pages/metricas/EquiposTab.vue') },
+      { path: 'campo', component: () => import('./pages/metricas/CampoTab.vue') },
+    ],
   },
   {
     path: '/usuarios',

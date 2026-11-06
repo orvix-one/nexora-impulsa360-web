@@ -8,6 +8,7 @@ export const SELECT_METRICAS_ACTIVACIONES = [
   'ciudad_activacion',
   'impulsador',
   'tipo_activacion',
+  'base_activacion',
   'nombres_cliente',
   'hubo_error',
   'tipo_comercio',
@@ -22,7 +23,7 @@ export const SELECT_METRICAS_ACTIVACIONES = [
   'longitud',
 ].join(',')
 
-// Limita las peticiones simultaneas para no saturar el pool de PostgREST (Nano).
+// Limita las peticiones simultaneas para no saturar el pool de PostgREST.
 export async function ejecutarConConcurrencia(tareas, limite) {
   const resultados = new Array(tareas.length)
   let siguiente = 0

@@ -21,7 +21,11 @@ async function cargar({ silencioso = false } = {}) {
   errorMsg.value = null
 
   try {
-    const resultado = await fetchActivacionesPagina({ page: page.value, pageSize: PAGE_SIZE, filtros: filtros.value })
+    const resultado = await fetchActivacionesPagina({
+      page: page.value,
+      pageSize: PAGE_SIZE,
+      filtros: filtros.value,
+    })
     if (actual !== solicitud) return
     activaciones.value = resultado.activations
     total.value = resultado.total
@@ -58,7 +62,10 @@ onMounted(cargar)
     <header class="view-header">
       <p class="view-kicker">Field Command</p>
       <h1 class="view-title">Control de Activaciones</h1>
-      <p class="view-description">Monitorea registros en tiempo real, filtra por plaza e impulsador y exporta cortes operativos.</p>
+      <p class="view-description">
+        Monitorea registros en tiempo real, filtra por plaza e impulsador y exporta cortes
+        operativos.
+      </p>
       <div class="meta-row">
         <span class="meta-pill">
           {{ loading ? 'Sincronizando...' : `${total} registros` }}

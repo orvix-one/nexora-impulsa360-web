@@ -7,6 +7,7 @@ Vue SPA → `/api` (Express, one Vercel function in `gru1`) → Supabase. The AP
 ## Layout
 
 - `src/pages`, `src/components`, `src/lib`: the SPA (views, components, shared logic).
+- `src/pages/MetricasPage.vue` + `src/pages/metricas/*Tab.vue` (Resumen, Equipos, Campo as child routes of `/metricas`); widgets in `src/components/metrics/`; all metrics logic in `src/lib/metrics/` (pure, tested); shared state and URL-synced filters in `useMetricas.js`.
 - `src/lib/api.js`: the only HTTP client (`apiRequest`); `src/lib/authStore.js`: session + profile.
 - `server/app.js`: the API (`/portal/*` scoped reads, `/admin/*` writes, `/evidencia/*` photo links). Helpers in `server/*.js`; `server/portalAuth.js` resolves the user.
 - `api/index.js`: Vercel entry. `tests/`: `node:test`. `supabase/`: schema and migrations (with README).
@@ -23,3 +24,12 @@ Vue SPA → `/api` (Express, one Vercel function in `gru1`) → Supabase. The AP
 - Pure logic lives in `src/lib` and `server/*.js`; HTTP tests run the real app against `tests/helpers/fakeSupabase.mjs`.
 - Database changes need approval and go through `supabase/migrations/` (workflow in `supabase/README.md`). Never edit the schema in the SQL Editor.
 - Deploy is a push to `main` (Vercel): run test, lint and build first.
+
+## Progressive cleanup
+
+Clean up as you go; never in a sweep. Do not reformat lines you did not change.
+
+- **Touch a file:** add `// @ts-check` on line 1 to `.js` files in `src/lib` and `server` (editor-only, no tsc script) and fix what the editor flags in your change. Add JSDoc (`@param`, `@returns`, shared `@typedef`) to the exported functions you change. Use `@ts-expect-error <reason>`, never `@ts-ignore`. If the file is too noisy, skip it and say so in the PR.
+- **Refactor a file:** move logic out of `.vue` into a pure `src/lib/<feature>/*.js`; the SFC only wires state to components. Tests import those modules, never SFC source text.
+- **Rewrite most of a file:** run `npx prettier --write <file>`. Templates: one element per line, components under ~200 lines, UI that repeats (cards, columns, filters) driven by a config array instead of repeated markup.
+- Reference example: `src/lib/metrics/` and `src/components/metrics/` (config in `filtros.js`, `tarjetas.js`, `ranking.js`).

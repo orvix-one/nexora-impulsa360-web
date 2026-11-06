@@ -27,6 +27,7 @@
   - Never narrate what the code does, restate identifiers or summarize changes.
   - Prefer clear names and small functions.
   - Non-obvious files may start with a short, stable abstract.
+- Touching a file? Follow "Progressive cleanup" in `ARCHITECTURE.md` (`// @ts-check` + JSDoc, logic out of `.vue`, format only what you rewrite).
 - Flag every workaround you add or find, especially fundamental or high-debt ones: what it is, why it exists and the proper fix.
 - Be concise in replies, docs, commit messages and PR text: lead with the result, skip narration.
 
