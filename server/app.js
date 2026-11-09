@@ -546,129 +546,18 @@ function buildEvidenceLinkPath(secret, row, tipo, bucketName) {
   return buildEvidencePath(row.id, tipo, buildEvidenceToken(secret, row.id, tipo, objectPath))
 }
 
-const BUCKET_LIST_PAGE_SIZE = 1000
-const BUCKET_LIST_CONCURRENCY = 16
-const BUCKET_LIST_ATTEMPTS = 3
-const BUCKET_USAGE_CACHE_TTL_MS = 5 * 60 * 1000
-
-async function listBucketPage(adminSupabase, bucketName, directory, offset) {
-  let lastError = null
-  for (let attempt = 0; attempt < BUCKET_LIST_ATTEMPTS; attempt += 1) {
-    const { data, error } = await adminSupabase.storage.from(bucketName).list(directory, {
-      limit: BUCKET_LIST_PAGE_SIZE,
-      offset,
-      sortBy: { column: 'name', order: 'asc' },
-    })
-    if (!error) {
-      return data
-    }
-    lastError = error
-  }
-  throw new Error(lastError.message)
-}
-
-async function listDirectoryUsage(adminSupabase, bucketName, directory) {
-  const subdirectories = []
-  let totalBytes = 0
-  let totalObjects = 0
-  let offset = 0
-
-  while (true) {
-    const data = await listBucketPage(adminSupabase, bucketName, directory, offset)
-
-    if (!data?.length) {
-      break
-    }
-
-    for (const item of data) {
-      const name = normalizeText(item?.name)
-      if (!name) {
-        continue
-      }
-
-      const isDirectory = item?.id == null && !item?.metadata
-      if (isDirectory) {
-        subdirectories.push(directory ? `${directory}/${name}` : name)
-        continue
-      }
-
-      if (name === '.emptyFolderPlaceholder') {
-        continue
-      }
-
-      totalObjects += 1
-
-      const size = Number(
-        item?.metadata?.size ?? item?.metadata?.contentLength ?? item?.metadata?.content_length
-      )
-      if (Number.isFinite(size) && size > 0) {
-        totalBytes += size
-      }
-    }
-
-    if (data.length < BUCKET_LIST_PAGE_SIZE) {
-      break
-    }
-
-    offset += BUCKET_LIST_PAGE_SIZE
-  }
-
-  return { subdirectories, totalBytes, totalObjects }
-}
-
-// Storage has one folder per activation, so a sequential walk takes minutes; list folders in parallel.
 async function calculateBucketUsageBytes(adminSupabase, bucketName) {
-  const pending = ['']
-  const visited = new Set()
-  let totalBytes = 0
-  let totalObjects = 0
+  const { data, error } = await adminSupabase
+    .rpc('get_storage_usage_bytes', { p_bucket: bucketName })
+    .single()
 
-  while (pending.length > 0) {
-    const batch = []
-    while (pending.length > 0 && batch.length < BUCKET_LIST_CONCURRENCY) {
-      const directory = pending.shift()
-      if (!visited.has(directory)) {
-        visited.add(directory)
-        batch.push(directory)
-      }
-    }
-
-    const results = await Promise.all(
-      batch.map((directory) => listDirectoryUsage(adminSupabase, bucketName, directory))
-    )
-
-    for (const result of results) {
-      totalBytes += result.totalBytes
-      totalObjects += result.totalObjects
-      pending.push(...result.subdirectories)
-    }
+  if (error) {
+    throw new Error(error.message)
   }
 
   return {
-    totalBytes,
-    totalObjects,
-  }
-}
-
-function createCachedBucketUsage(adminSupabase, bucketName, ttlMs = BUCKET_USAGE_CACHE_TTL_MS) {
-  let cached = null
-  let inFlight = null
-
-  return function getBucketUsage() {
-    if (cached && Date.now() - cached.at < ttlMs) {
-      return Promise.resolve(cached.value)
-    }
-
-    inFlight ??= calculateBucketUsageBytes(adminSupabase, bucketName)
-      .then((value) => {
-        cached = { value, at: Date.now() }
-        return value
-      })
-      .finally(() => {
-        inFlight = null
-      })
-
-    return inFlight
+    totalBytes: Number(data?.total_bytes ?? 0),
+    totalObjects: Number(data?.total_objects ?? 0),
   }
 }
 
@@ -889,7 +778,6 @@ export function createAdminApiApp({ env = process.env, adminSupabase: injectedSu
       persistSession: false,
     },
   })
-  const getBucketUsage = createCachedBucketUsage(adminSupabase, activacionesBucket)
 
   async function attachUserRoles(users) {
     if (!users.length) return users
@@ -2791,7 +2679,7 @@ export function createAdminApiApp({ env = process.env, adminSupabase: injectedSu
 
       let bucketUsage = null
       try {
-        bucketUsage = await getBucketUsage()
+        bucketUsage = await calculateBucketUsageBytes(adminSupabase, activacionesBucket)
       } catch (error) {
         jsonError(
           res,
