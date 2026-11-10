@@ -413,6 +413,7 @@ function iniciarEdicion() {
     telefono_cliente: row.telefono_cliente ?? '',
     email_cliente: row.email_cliente ?? '',
     plaza: row[plazaEditableKey.value] ?? '',
+    zona_activacion: row.zona_activacion ?? '',
     tipo_grupo: inferActivationCategory(row),
     tipo_activacion: row.tipo_activacion ?? '',
     resultado: resultadoEditableKey.value ? row[resultadoEditableKey.value] ?? '' : '',
@@ -568,6 +569,7 @@ function construirCambiosEdicion() {
   setIfChanged('telefono_cliente', form.telefono_cliente)
   setIfChanged('email_cliente', form.email_cliente)
   setIfChanged(plazaEditableKey.value, form.plaza)
+  setIfChanged('zona_activacion', form.zona_activacion)
   setIfChanged('observaciones', form.observaciones)
   setIfChanged('tipo_error', form.tipo_error)
   setIfChanged('descripcion_error', form.descripcion_error)
@@ -715,7 +717,7 @@ const columnasExportacion = [
   ['Respaldo', (row) => (row.respaldo ? 'Si' : 'No')],
   ['Hubo Error', (row) => (row.hubo_error ? 'Si' : 'No')],
   ['Descripcion Error', (row) => row.descripcion_error],
-  ['Tipo Activacion', (row) => row.tipo_activacion],
+  ['Subtipo', (row) => row.tipo_activacion],
   ['Tipo Comercio', (row) => row.tipo_comercio],
   ['Tamano Tienda', (row) => row.tamano_tienda],
   ['Tipo Tienda', (row) => row.tipo_tienda],
@@ -749,10 +751,10 @@ const columnasExcelPersonalizado = [
   ['Fecha de la Activación', (row) => getFechaExcelDate(row)],
   ['Ciudad', (row) => etiquetaCiudadActivacion(row)],
   ['Zona de Activación', (row) => row.zona_activacion],
-  ['Tipo de Activación', (row) => row.tipo_activacion],
+  ['Subtipo', (row) => row.tipo_activacion],
   ['Tienda Barrio - Tamaño', (row) => tieneValor(row.tamano_tienda) ? row.tamano_tienda : esTiendaBarrioRow(row) ? primerValor(row, ['tipo_tienda']) : ''],
-  ['Tienda Barrio - Tipo de Activación', (row) => tieneValor(row.tamano_tienda) ? 'Tienda de Barrio' : esTiendaBarrioRow(row) ? primerValor(row, ['tipo_activacion', 'tipo_comercio']) : ''],
-  ['Comercio - Tipo de Activación', (row) => esComercioRow(row) ? row.tipo_comercio : ''],
+  ['Tienda Barrio - Subtipo', (row) => tieneValor(row.tamano_tienda) ? 'Tienda de Barrio' : esTiendaBarrioRow(row) ? primerValor(row, ['tipo_activacion', 'tipo_comercio']) : ''],
+  ['Comercio - Tipo de Comercio', (row) => esComercioRow(row) ? row.tipo_comercio : ''],
   ['Comercio - Rubro', (row) => {
     const rubro = [row.rubro_comercio, row.rubro_comercio_otro].filter(Boolean).join(' - ')
     if (esComercioRow(row)) return rubro
@@ -762,7 +764,7 @@ const columnasExcelPersonalizado = [
     if (esComercioRow(row)) return valorBooleano(row.comercio_fuera_mercado)
     return row.comercio_fuera_mercado == null ? '' : valorBooleano(row.comercio_fuera_mercado)
   }],
-  ['Transeúnte - Tipo de Activación', (row) => esTranseunteRow(row) ? row.tipo_activacion : ''],
+  ['Transeúnte - Subtipo', (row) => esTranseunteRow(row) ? row.tipo_activacion : ''],
   ['Nombre del Activador', (row) => row.impulsador],
   ['Nombre', (row) => row.nombres_cliente],
   ['Apellidos', (row) => row.apellidos_cliente],
@@ -988,7 +990,7 @@ async function descargarExcelPersonalizado() {
             <th>Hora</th>
             <th>Activador o impulsador</th>
             <th>Cliente o comercio</th>
-            <th>Tipo Activacion</th>
+            <th>Subtipo</th>
             <th>Ciudad</th>
             <th>Estado o resultado</th>
             <th>Acciones</th>
@@ -1044,6 +1046,7 @@ async function descargarExcelPersonalizado() {
                   <input v-model="formularioEdicion.plaza" class="input-texto">
                 </template>
               </label>
+              <label><span class="field-label">Distrito o zona</span><input v-model="formularioEdicion.zona_activacion" class="input-texto"></label>
               <label><span class="field-label">Categoría</span><select :value="formularioEdicion.tipo_grupo" class="input-texto" @change="cambiarCategoria"><option value="">Selecciona categoría</option><option v-for="categoria in ACTIVATION_CATEGORIES" :key="categoria.key" :value="categoria.key">{{ categoria.label }}</option></select></label>
               <label><span class="field-label">Subtipo</span><select :value="formularioEdicion.tipo_activacion" class="input-texto" :disabled="!formularioEdicion.tipo_grupo" @change="cambiarTipoActivacion"><option value="">Selecciona subtipo</option><option v-if="formularioEdicion.tipo_activacion && !tiposActivacionDisponibles.some((item) => item.key === formularioEdicion.tipo_activacion)" :value="formularioEdicion.tipo_activacion">Histórico: {{ formularioEdicion.tipo_activacion }}</option><option v-for="tipo in tiposActivacionDisponibles" :key="tipo.key" :value="tipo.key">{{ tipo.label }}</option></select></label>
               <label v-if="esTiendaBarrio"><span class="field-label">Tamaño de tienda</span><select v-model="formularioEdicion.tamano_tienda" class="input-texto"><option value="">Selecciona tamaño</option><option v-if="formularioEdicion.tamano_tienda && !STORE_SIZES.includes(formularioEdicion.tamano_tienda)" :value="formularioEdicion.tamano_tienda">Histórico: {{ formularioEdicion.tamano_tienda }}</option><option v-for="tamano in STORE_SIZES" :key="tamano" :value="tamano">{{ tamano }}</option></select></label>

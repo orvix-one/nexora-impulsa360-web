@@ -30,6 +30,7 @@ const ACTIVATION_EDITABLE_FIELDS = new Set([
   'email_cliente',
   'plaza',
   'ciudad_activacion',
+  'zona_activacion',
   'tipo_activacion',
   'resultado',
   'estado',

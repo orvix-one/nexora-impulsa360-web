@@ -114,7 +114,7 @@ export async function generateActivacionesExcel({ adminSupabase, bucket, filters
     ['Respaldo', 'respaldo', 11],
     ['Hubo Error', 'huboError', 12],
     ['Descripcion Error', 'descripcionError', 30],
-    ['Tipo Activacion', 'tipoActivacion', 20],
+    ['Subtipo', 'tipoActivacion', 20],
     ['Tipo Comercio', 'tipoComercio', 20],
     ['Tamano Tienda', 'tamanoTienda', 18],
     ['Tipo Tienda', 'tipoTienda', 18],
