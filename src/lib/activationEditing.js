@@ -74,6 +74,8 @@ export function inferActivationCategory(row = {}) {
 
   const base = normalizeKey(row.base_activacion)
   if (['comercio', 'tienda_barrio', 'transeunte', 'cliente_antiguo'].includes(base)) return base
+  // The app writes base 'none' for Comercio no_habilitado and reimpresion_qr
+  if (base === 'none' && !row.tamano_tienda && !row.tipo_tienda) return 'comercio'
   if (row.tamano_tienda || row.tipo_tienda) return 'tienda_barrio'
 
   const type = normalizeKey(row.tipo_activacion)

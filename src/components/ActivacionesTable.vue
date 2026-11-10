@@ -12,6 +12,7 @@ import {
 import { isValidEmail, normalizeEmail, normalizeText } from '../lib/textUtils'
 import { useAuth } from '../lib/authStore'
 import { etiquetaCiudadActivacion } from '../lib/plazas'
+import { zonasParaCiudad } from '../lib/zonasActivacion'
 import { neutralizeExportRow, neutralizeSpreadsheetFormula } from '../lib/exportSafety'
 import { logClientError } from '../lib/logging'
 import {
@@ -396,6 +397,7 @@ const esActivacionComercio = computed(() => isGeneralCommerce(
   formularioEdicion.value.tipo_grupo,
   formularioEdicion.value.tipo_activacion,
 ))
+const zonasDisponibles = computed(() => zonasParaCiudad(formularioEdicion.value.plaza))
 const esTiendaBarrio = computed(() => formularioEdicion.value.tipo_grupo === 'tienda_barrio')
 const etiquetaFotoSecundaria = computed(() => secondaryPhotoLabel(activacionSeleccionada.value ?? {}))
 const mostrarCreditos = computed(() => isCreditosEligible(formularioEdicion.value) || formularioEdicion.value.creditos === true)
@@ -1046,7 +1048,7 @@ async function descargarExcelPersonalizado() {
                   <input v-model="formularioEdicion.plaza" class="input-texto">
                 </template>
               </label>
-              <label><span class="field-label">Distrito o zona</span><input v-model="formularioEdicion.zona_activacion" class="input-texto"></label>
+              <label><span class="field-label">Distrito o zona</span><select v-if="zonasDisponibles.length" v-model="formularioEdicion.zona_activacion" class="input-texto"><option value="">Selecciona zona</option><option v-if="formularioEdicion.zona_activacion && !zonasDisponibles.includes(formularioEdicion.zona_activacion)" :value="formularioEdicion.zona_activacion">Histórico: {{ formularioEdicion.zona_activacion }}</option><option v-for="zona in zonasDisponibles" :key="zona" :value="zona">{{ zona }}</option></select><input v-else v-model="formularioEdicion.zona_activacion" class="input-texto"></label>
               <label><span class="field-label">Categoría</span><select :value="formularioEdicion.tipo_grupo" class="input-texto" @change="cambiarCategoria"><option value="">Selecciona categoría</option><option v-for="categoria in ACTIVATION_CATEGORIES" :key="categoria.key" :value="categoria.key">{{ categoria.label }}</option></select></label>
               <label><span class="field-label">Subtipo</span><select :value="formularioEdicion.tipo_activacion" class="input-texto" :disabled="!formularioEdicion.tipo_grupo" @change="cambiarTipoActivacion"><option value="">Selecciona subtipo</option><option v-if="formularioEdicion.tipo_activacion && !tiposActivacionDisponibles.some((item) => item.key === formularioEdicion.tipo_activacion)" :value="formularioEdicion.tipo_activacion">Histórico: {{ formularioEdicion.tipo_activacion }}</option><option v-for="tipo in tiposActivacionDisponibles" :key="tipo.key" :value="tipo.key">{{ tipo.label }}</option></select></label>
               <label v-if="esTiendaBarrio"><span class="field-label">Tamaño de tienda</span><select v-model="formularioEdicion.tamano_tienda" class="input-texto"><option value="">Selecciona tamaño</option><option v-if="formularioEdicion.tamano_tienda && !STORE_SIZES.includes(formularioEdicion.tamano_tienda)" :value="formularioEdicion.tamano_tienda">Histórico: {{ formularioEdicion.tamano_tienda }}</option><option v-for="tamano in STORE_SIZES" :key="tamano" :value="tamano">{{ tamano }}</option></select></label>

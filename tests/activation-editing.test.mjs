@@ -304,3 +304,9 @@ test('la segunda foto se llama Reporte solo en no habilitado de tienda de barrio
   assert.equal(secondaryPhotoLabel({ tipo_grupo: 'transeunte', tipo_activacion: 'transeunte' }), 'Cash-In')
   assert.equal(secondaryPhotoLabel(), 'Cash-In')
 })
+
+test('infiere Comercio para base none (no_habilitado y reimpresion_qr de Comercio)', () => {
+  assert.equal(inferActivationCategory({ base_activacion: 'none', tipo_activacion: 'no_habilitado' }), 'comercio')
+  assert.equal(inferActivationCategory({ base_activacion: 'none', tipo_activacion: 'reimpresion_qr' }), 'comercio')
+  assert.equal(inferActivationCategory({ base_activacion: 'none', tipo_activacion: 'reimpresion_qr', tamano_tienda: 'Mediana' }), 'tienda_barrio')
+})
