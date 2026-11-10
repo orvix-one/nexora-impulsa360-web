@@ -237,3 +237,8 @@ export function activationClassificationUpdate(values = {}) {
     comercio_fuera_mercado: values.comercio_fuera_mercado,
   }
 }
+
+export function activationCategoryLabel(row = {}) {
+  const category = inferActivationCategory(row)
+  return ACTIVATION_CATEGORIES.find((item) => item.key === category)?.label ?? ''
+}

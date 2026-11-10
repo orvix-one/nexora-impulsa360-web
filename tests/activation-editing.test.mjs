@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  activationCategoryLabel,
   ACTIVATION_CATEGORIES,
   ACTIVATION_TYPES_BY_CATEGORY,
   activationBaseFor,
@@ -309,4 +310,11 @@ test('infiere Comercio para base none (no_habilitado y reimpresion_qr de Comerci
   assert.equal(inferActivationCategory({ base_activacion: 'none', tipo_activacion: 'no_habilitado' }), 'comercio')
   assert.equal(inferActivationCategory({ base_activacion: 'none', tipo_activacion: 'reimpresion_qr' }), 'comercio')
   assert.equal(inferActivationCategory({ base_activacion: 'none', tipo_activacion: 'reimpresion_qr', tamano_tienda: 'Mediana' }), 'tienda_barrio')
+})
+
+test('activationCategoryLabel etiqueta la categoría para exportaciones', () => {
+  assert.equal(activationCategoryLabel({ base_activacion: 'none', tipo_activacion: 'reimpresion_qr' }), 'Comercio')
+  assert.equal(activationCategoryLabel({ base_activacion: 'tienda_barrio', tipo_activacion: 'comercio', tamano_tienda: 'Grande' }), 'Tienda de barrio')
+  assert.equal(activationCategoryLabel({ base_activacion: 'transeunte', tipo_activacion: 'transeunte' }), 'Transeúnte')
+  assert.equal(activationCategoryLabel({ base_activacion: 'cliente_antiguo', tipo_activacion: 'cliente_antiguo' }), 'Cliente antiguo')
 })

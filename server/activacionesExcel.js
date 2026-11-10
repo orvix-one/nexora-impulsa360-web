@@ -3,6 +3,7 @@ import { neutralizeExportRow } from './exportSafety.js'
 import { aplicarAlcanceLider } from './alcanceLider.js'
 import { resolveStorageObjectPathFromFotoUrl } from './storagePaths.js'
 import { etiquetaCiudadActivacion, normalizarPlazaClave } from '../src/lib/plazas.js'
+import { activationCategoryLabel } from '../src/lib/activationEditing.js'
 
 const PAGE_SIZE = 1000
 const boliviaDateTimeFormatter = new Intl.DateTimeFormat('es-BO', {
@@ -114,6 +115,7 @@ export async function generateActivacionesExcel({ adminSupabase, bucket, filters
     ['Respaldo', 'respaldo', 11],
     ['Hubo Error', 'huboError', 12],
     ['Descripcion Error', 'descripcionError', 30],
+    ['Categoría', 'categoria', 18],
     ['Subtipo', 'tipoActivacion', 20],
     ['Tipo Comercio', 'tipoComercio', 20],
     ['Tamano Tienda', 'tamanoTienda', 18],
@@ -172,6 +174,7 @@ export async function generateActivacionesExcel({ adminSupabase, bucket, filters
         respaldo: yesNo(row.respaldo),
         huboError: yesNo(row.hubo_error),
         descripcionError: row.descripcion_error,
+        categoria: activationCategoryLabel(row),
         tipoActivacion: row.tipo_activacion,
         tipoComercio: row.tipo_comercio,
         tamanoTienda: row.tamano_tienda,
