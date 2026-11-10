@@ -184,7 +184,7 @@ export function validateActivationClassification(values = {}, original = {}) {
   const preservesHistoricalType = category === originalCategory && activationType === original.tipo_activacion
   if (!ACTIVATION_TYPES_BY_CATEGORY[category] && !preservesHistoricalType) return 'Selecciona una categoría válida.'
   if (!preservesHistoricalType && !(ACTIVATION_TYPES_BY_CATEGORY[category] ?? []).some((item) => item.key === activationType)) {
-    return 'Selecciona un tipo de activación válido para la categoría.'
+    return 'Selecciona un subtipo válido para la categoría.'
   }
   const originalStoreSize = original.tamano_tienda ?? original.tipo_tienda
   const preservesHistoricalStoreSize = category === originalCategory && values.tamano_tienda === originalStoreSize
@@ -208,11 +208,11 @@ export function validateActivationClassification(values = {}, original = {}) {
   const typeChanged = category !== originalCategory || activationType !== original.tipo_activacion
   const creditosBecomesTrue = values.creditos === true && original.creditos !== true
   if (values.creditos === true && !isCreditosEligible(values) && (creditosBecomesTrue || typeChanged)) {
-    return 'Créditos no aplica al tipo de activación seleccionado.'
+    return 'Créditos no aplica al subtipo seleccionado.'
   }
   const remesasBecomesTrue = values.remesas === true && original.remesas !== true
   if (values.remesas === true && !isRemesasEligible(values) && (remesasBecomesTrue || typeChanged)) {
-    return 'Remesas no aplica al tipo de activación seleccionado.'
+    return 'Remesas no aplica al subtipo seleccionado.'
   }
   return null
 }

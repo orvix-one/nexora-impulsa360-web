@@ -228,7 +228,7 @@ function etiquetaCampo(key, row = {}) {
     plaza_base_registro: 'Plaza organizacional (base)',
     plaza_efectiva_registro: 'Plaza organizacional (efectiva)',
     plaza_temporal_registro: 'Plaza organizacional (temporal)',
-    tipo_activacion: 'Tipo de activacion', tipo_comercio: 'Tipo de comercio',
+    tipo_activacion: 'Subtipo', tipo_comercio: 'Tipo de comercio',
     tamano_tienda: 'Tamano de tienda', foto_url: 'Fotografia', descargo_app: 'Descargo la app',
     cash_in: 'Cash-In', cash_out: 'Cash-Out', qr_fisico: 'QR fisico', p2p: 'P2P',
     hubo_error: 'Hubo error', descripcion_error: 'Descripcion del error',
@@ -1045,7 +1045,7 @@ async function descargarExcelPersonalizado() {
                 </template>
               </label>
               <label><span class="field-label">Categoría</span><select :value="formularioEdicion.tipo_grupo" class="input-texto" @change="cambiarCategoria"><option value="">Selecciona categoría</option><option v-for="categoria in ACTIVATION_CATEGORIES" :key="categoria.key" :value="categoria.key">{{ categoria.label }}</option></select></label>
-              <label><span class="field-label">Tipo de activacion</span><select :value="formularioEdicion.tipo_activacion" class="input-texto" :disabled="!formularioEdicion.tipo_grupo" @change="cambiarTipoActivacion"><option value="">Selecciona tipo</option><option v-if="formularioEdicion.tipo_activacion && !tiposActivacionDisponibles.some((item) => item.key === formularioEdicion.tipo_activacion)" :value="formularioEdicion.tipo_activacion">Histórico: {{ formularioEdicion.tipo_activacion }}</option><option v-for="tipo in tiposActivacionDisponibles" :key="tipo.key" :value="tipo.key">{{ tipo.label }}</option></select></label>
+              <label><span class="field-label">Subtipo</span><select :value="formularioEdicion.tipo_activacion" class="input-texto" :disabled="!formularioEdicion.tipo_grupo" @change="cambiarTipoActivacion"><option value="">Selecciona subtipo</option><option v-if="formularioEdicion.tipo_activacion && !tiposActivacionDisponibles.some((item) => item.key === formularioEdicion.tipo_activacion)" :value="formularioEdicion.tipo_activacion">Histórico: {{ formularioEdicion.tipo_activacion }}</option><option v-for="tipo in tiposActivacionDisponibles" :key="tipo.key" :value="tipo.key">{{ tipo.label }}</option></select></label>
               <label v-if="esTiendaBarrio"><span class="field-label">Tamaño de tienda</span><select v-model="formularioEdicion.tamano_tienda" class="input-texto"><option value="">Selecciona tamaño</option><option v-if="formularioEdicion.tamano_tienda && !STORE_SIZES.includes(formularioEdicion.tamano_tienda)" :value="formularioEdicion.tamano_tienda">Histórico: {{ formularioEdicion.tamano_tienda }}</option><option v-for="tamano in STORE_SIZES" :key="tamano" :value="tamano">{{ tamano }}</option></select></label>
               <label v-if="resultadoEditableKey"><span class="field-label">Resultado o estado</span><input v-model="formularioEdicion.resultado" class="input-texto"></label>
               <template v-if="esActivacionComercio">

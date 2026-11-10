@@ -2524,11 +2524,11 @@ export function createAdminApiApp({ env = process.env, adminSupabase: injectedSu
         tipo_grupo: activationCategory || existingRow.tipo_grupo,
       }
       if (updatePayload.creditos === true && !isCreditosEligible(eligibilityRow)) {
-        jsonError(res, 400, 'Créditos no aplica al tipo de activación seleccionado.')
+        jsonError(res, 400, 'Créditos no aplica al subtipo seleccionado.')
         return
       }
       if (updatePayload.remesas === true && !isRemesasEligible(eligibilityRow)) {
-        jsonError(res, 400, 'Remesas no aplica al tipo de activación seleccionado.')
+        jsonError(res, 400, 'Remesas no aplica al subtipo seleccionado.')
         return
       }
 

@@ -99,7 +99,7 @@ test('rechaza guardado sin motivo', () => {
 test('rechaza combinaciones inválidas nuevas', () => {
   assert.match(validateActivationClassification({
     tipo_grupo: 'tienda_barrio', tipo_activacion: 'reactivacion_comercio', tamano_tienda: 'Pequeña',
-  }, commerce), /tipo de activación válido/)
+  }, commerce), /subtipo válido/)
   assert.match(validateActivationClassification({
     tipo_grupo: 'tienda_barrio', tipo_activacion: 'comercio', tamano_tienda: '',
   }, commerce), /tamaño de la tienda/)
@@ -187,11 +187,11 @@ test('D1: rechaza cambios explícitos a clasificaciones inválidas', () => {
   )
   assert.match(
     validateActivationClassification({ ...historical, tipo_grupo: '', tipo_activacion: 'otro_tipo' }, historical),
-    /categoría válida|tipo de activación válido/,
+    /categoría válida|subtipo válido/,
   )
   assert.match(
     validateActivationClassification({ tipo_grupo: 'tienda_barrio', tipo_activacion: 'reactivacion_comercio', tamano_tienda: 'Pequeña' }, commerce),
-    /tipo de activación válido/,
+    /subtipo válido/,
   )
 })
 
