@@ -494,6 +494,10 @@ button:disabled,
   color: #ffffff;
 }
 
+.boton-exportar-yolopago {
+  background: var(--ru-success);
+}
+
 .boton-editar {
   background: #7c4b00;
   color: #ffffff;

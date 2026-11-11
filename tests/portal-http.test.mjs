@@ -58,26 +58,22 @@ test('administrador por activador_roles: accede a /admin y ve todo el alcance au
     assert.equal((await get('/admin/healthz', TOKENS.lider)).status, 200)
     const { profile } = await (await get('/portal/me', TOKENS.lider)).json()
     assert.deepEqual(profile.roles, ['lider', 'administrador'])
-    const excel = await get('/portal/activations/export-excel', TOKENS.lider)
-    assert.equal(excel.headers.get('x-export-row-count'), '6')
+    const { activations } = await (await get('/portal/activations/export-rows', TOKENS.lider)).json()
+    assert.equal(activations.length, 6)
   }, tables)
 })
 
-test('GET /portal/activations/export-excel: cuenta filas segun alcance y filtros', () =>
+test('GET /portal/activations/export-rows: cuenta filas segun alcance y filtros', () =>
   conPortal(async ({ get }) => {
-    const admin = await get('/portal/activations/export-excel', TOKENS.admin)
-    assert.equal(admin.status, 200)
-    assert.equal(admin.headers.get('x-export-row-count'), '6')
-    assert.equal(admin.headers.get('x-export-version'), 'links-v2')
-
-    const lider = await get('/portal/activations/export-excel', TOKENS.lider)
-    assert.equal(lider.headers.get('x-export-row-count'), '3')
-
-    const filtrado = await get('/portal/activations/export-excel?fechaDesde=2026-10-04&fechaHasta=2026-10-05', TOKENS.admin)
-    assert.equal(filtrado.headers.get('x-export-row-count'), '2')
-
-    const porCiudad = await get('/portal/activations/export-excel?plaza=la%20paz', TOKENS.admin)
-    assert.equal(porCiudad.headers.get('x-export-row-count'), '3')
+    const contar = async (query, token) => {
+      const response = await get(`/portal/activations/export-rows${query}`, token)
+      assert.equal(response.status, 200)
+      return (await response.json()).activations.length
+    }
+    assert.equal(await contar('', TOKENS.admin), 6)
+    assert.equal(await contar('', TOKENS.lider), 3)
+    assert.equal(await contar('?fechaDesde=2026-10-04&fechaHasta=2026-10-05', TOKENS.admin), 2)
+    assert.equal(await contar('?plaza=la%20paz', TOKENS.admin), 3)
   }))
 
 test('GET /portal/users: el lider solo ve a su equipo', () =>

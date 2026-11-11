@@ -1,33 +1,20 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
+import { COLUMNAS_EXCEL } from '../src/lib/reportes/excel.js'
 
 const componentSource = readFileSync(new URL('../src/components/ActivacionesTable.vue', import.meta.url), 'utf8')
 const serverSource = readFileSync(new URL('../server/app.js', import.meta.url), 'utf8')
-const serverExcelSource = readFileSync(new URL('../server/activacionesExcel.js', import.meta.url), 'utf8')
 
-const columnasCsv = componentSource.match(/const columnasExportacion = \[([\s\S]*?)\n\]/)?.[1] ?? ''
-const columnasExcel = componentSource.match(/const columnasExcelPersonalizado = \[([\s\S]*?)\n\]/)?.[1] ?? ''
 const seccionesDetalle = componentSource.match(/const seccionesDetalleConfig = \[([\s\S]*?)\n\]/)?.[1] ?? ''
 const editableFields = serverSource.match(/const ACTIVATION_EDITABLE_FIELDS = new Set\(\[([\s\S]*?)\]\)/)?.[1] ?? ''
-const serverColumns = serverExcelSource.match(/worksheet\.columns = \[([\s\S]*?)\]\.map/)?.[1] ?? ''
 
-test('CSV agrega Creditos y Remesas al final conservando columnas previas', () => {
-  assert.match(columnasCsv, /\['Creditos',[\s\S]*\['Remesas'/)
-  assert.ok(columnasCsv.indexOf("['Creditos'") > columnasCsv.indexOf("['Usuario ID'"))
-  assert.match(columnasCsv, /\(row\) => \(row\.creditos \? 'Si' : 'No'\)/)
-  assert.match(columnasCsv, /\(row\) => \(row\.remesas \? 'Si' : 'No'\)/)
-})
-
-test('Excel personalizado agrega Créditos y Remesas al final', () => {
-  assert.match(columnasExcel, /\['Créditos',[\s\S]*\['Remesas'/)
-  assert.ok(columnasExcel.indexOf("['Créditos'") > columnasExcel.indexOf("['Descripción del Error'"))
-})
-
-test('Excel del servidor agrega Creditos y Remesas', () => {
-  assert.match(serverColumns, /\['Creditos', 'creditos', \d+\][\s\S]*\['Remesas', 'remesas', \d+\]/)
-  assert.match(serverExcelSource, /creditos: row\.creditos \? 'Si' : 'No'/)
-  assert.match(serverExcelSource, /remesas: row\.remesas \? 'Si' : 'No'/)
+test('el Excel agrega Créditos y Remesas tras las columnas de error', () => {
+  const headers = COLUMNAS_EXCEL.map(([header]) => header)
+  assert.ok(headers.indexOf('Créditos') > headers.indexOf('Descripción del Error'))
+  assert.equal(headers.indexOf('Remesas'), headers.indexOf('Créditos') + 1)
+  const valor = (header, fila) => COLUMNAS_EXCEL.find(([h]) => h === header)[1](fila, {})
+  assert.deepEqual([valor('Créditos', { creditos: true }), valor('Remesas', {})], ['Si', 'No'])
 })
 
 test('el detalle muestra creditos y remesas de forma explícita y sin duplicados', () => {

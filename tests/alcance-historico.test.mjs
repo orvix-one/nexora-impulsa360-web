@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import { aplicarAlcanceLider, esUuid, expresionAlcanceLider } from '../server/alcanceLider.js'
-import { generateActivacionesExcel } from '../server/activacionesExcel.js'
+import { fetchActivaciones } from '../server/activacionesExportacion.js'
 
 const lider = '10000000-0000-0000-0000-000000000001'
 const liderAjeno = '10000000-0000-0000-0000-000000000009'
@@ -82,7 +82,7 @@ test('validacion: activador inhabilitado conserva su historial para el lider aut
   assert.deepEqual(idsAutorizados([], lider), ['f1', 'f2'], 'el historico propio no depende del equipo')
 
   const handler = manejador("app.get('/portal/metrics/activations'", "app.get('/portal/activations/export-rows'")
-  const excelSource = readFileSync(new URL('../server/activacionesExcel.js', import.meta.url), 'utf8')
+  const excelSource = readFileSync(new URL('../server/activacionesExportacion.js', import.meta.url), 'utf8')
   assert.doesNotMatch(handler, /estado/)
   assert.doesNotMatch(excelSource, /estado/, 'la exportacion tampoco filtra por estado')
 })
@@ -144,13 +144,8 @@ function fakeSupabase(filas) {
 async function exportar(userIds, liderId) {
   const supabase = fakeSupabase(filasBase)
   const alcance = { userIds, liderId }
-  const result = await generateActivacionesExcel({
-    adminSupabase: supabase,
-    bucket: 'activaciones',
-    filters: filtrosVacios,
-    alcance,
-  })
-  return { result, supabase, alcance }
+  const rows = await fetchActivaciones(supabase, filtrosVacios, alcance)
+  return { result: { rowCount: rows.length }, supabase, alcance }
 }
 
 test('validacion: la exportacion devuelve exactamente el conjunto autorizado del listado', async () => {

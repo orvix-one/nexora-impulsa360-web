@@ -142,7 +142,6 @@ export const TEST_ENV = {
   SUPABASE_URL: 'http://supabase.test',
   SUPABASE_SERVICE_ROLE_KEY: 'service-role-test',
   EVIDENCE_LINK_SECRET: 'secreto-de-prueba',
-  EVIDENCE_PUBLIC_BASE_URL: 'https://portal.test/api',
 }
 
 export async function startPortal(tables = seedTables(), appOptions = {}) {

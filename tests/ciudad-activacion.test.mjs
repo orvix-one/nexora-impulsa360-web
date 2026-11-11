@@ -7,13 +7,14 @@ import {
   etiquetaCiudadActivacion,
   SIN_CIUDAD_REGISTRADA,
 } from '../src/lib/plazas.js'
-import { generateActivacionesExcel } from '../server/activacionesExcel.js'
+import { fetchActivaciones } from '../server/activacionesExportacion.js'
+import { COLUMNAS_EXCEL, generarExcel } from '../src/lib/reportes/excel.js'
 
 const componentSource = readFileSync(new URL('../src/components/ActivacionesTable.vue', import.meta.url), 'utf8')
 const identidadSource = readFileSync(new URL('../src/lib/metrics/identidad.js', import.meta.url), 'utf8')
 const filtrosMetricasSource = readFileSync(new URL('../src/lib/metrics/filtros.js', import.meta.url), 'utf8')
 const cargaMetricasSource = readFileSync(new URL('../src/lib/metrics/carga.js', import.meta.url), 'utf8')
-const serverExcelSource = readFileSync(new URL('../server/activacionesExcel.js', import.meta.url), 'utf8')
+const serverExcelSource = readFileSync(new URL('../server/activacionesExportacion.js', import.meta.url), 'utf8')
 const plazasSource = readFileSync(new URL('../src/lib/plazas.js', import.meta.url), 'utf8')
 
 test('la ciudad sale de ciudad_activacion y normaliza nombres', () => {
@@ -82,34 +83,31 @@ const filasExcel = [
 ]
 
 async function leerExcel(filters) {
-  const result = await generateActivacionesExcel({
-    adminSupabase: fakeSupabase(filasExcel),
-    bucket: 'activaciones',
-    filters: { ...filtrosVacios, ...filters },
-  })
+  const rows = await fetchActivaciones(fakeSupabase(filasExcel), { ...filtrosVacios, ...filters })
+  const buffer = await generarExcel(ExcelJS, rows, { urlEvidencia: (ruta) => ruta })
   const workbook = new ExcelJS.Workbook()
-  await workbook.xlsx.load(result.buffer)
+  await workbook.xlsx.load(buffer)
   const worksheet = workbook.getWorksheet('Activaciones')
   const encabezados = []
-  worksheet.getRow(2).eachCell({ includeEmpty: false }, (cell, index) => { encabezados[index] = cell.value })
+  worksheet.getRow(1).eachCell({ includeEmpty: false }, (cell, index) => { encabezados[index] = cell.value })
   const filas = []
   worksheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
-    if (rowNumber <= 2) return
+    if (rowNumber <= 1) return
     const values = {}
     row.eachCell({ includeEmpty: false }, (cell, index) => { values[encabezados[index]] = cell.value })
     filas.push(values)
   })
-  return { result, encabezados: encabezados.filter(Boolean), filas }
+  return { rowCount: rows.length, encabezados: encabezados.filter(Boolean), filas }
 }
 
-test('el Excel del servidor separa Ciudad geográfica de Plaza Base y Plaza Efectiva', async () => {
-  const { encabezados, filas, result } = await leerExcel({})
-  for (const columna of ['Ciudad', 'Distrito', 'Plaza Base', 'Plaza Efectiva']) {
+test('el Excel separa Ciudad geográfica de Plaza Base y Plaza Efectiva', async () => {
+  const { encabezados, filas, rowCount } = await leerExcel({})
+  for (const columna of ['Ciudad', 'Zona de Activación', 'Plaza Base', 'Plaza Efectiva']) {
     assert.ok(encabezados.includes(columna), `falta la columna ${columna}`)
   }
   assert.ok(!encabezados.includes('Plaza'), 'la columna unica "Plaza" dejo de mezclar ciudad y plaza')
 
-  assert.equal(result.rowCount, 3)
+  assert.equal(rowCount, 3)
   assert.deepEqual(filas.map((fila) => [fila.Ciudad, fila['Plaza Efectiva'], fila['Plaza Base']]), [
     ['El Alto', 'La Paz', 'La Paz'],
     ['La Paz', 'El Alto', 'El Alto'],
@@ -119,14 +117,14 @@ test('el Excel del servidor separa Ciudad geográfica de Plaza Base y Plaza Efec
 
 test('el filtro de ciudad del Excel usa la misma semántica que la columna', async () => {
   const porNombre = await leerExcel({ plaza: 'el alto' })
-  assert.equal(porNombre.result.rowCount, 1)
+  assert.equal(porNombre.rowCount, 1)
   assert.equal(porNombre.filas[0].Ciudad, 'El Alto')
 
   const porNormalizado = await leerExcel({ plaza: 'el_alto' })
-  assert.equal(porNormalizado.result.rowCount, 1)
+  assert.equal(porNormalizado.rowCount, 1)
 
   const sinCiudad = await leerExcel({ plaza: 'sin ciudad registrada' })
-  assert.equal(sinCiudad.result.rowCount, 1)
+  assert.equal(sinCiudad.rowCount, 1)
   assert.equal(sinCiudad.filas[0].Ciudad, SIN_CIUDAD_REGISTRADA)
 })
 
@@ -147,14 +145,8 @@ test('el listado, el detalle y las exportaciones del portal usan la misma ciudad
   assert.match(componentSource, /filter\(\(key\) => key === 'ciudad_activacion' \|\| tieneValor\(row\[key\]\)/,
     'la ciudad vacía se muestra en el detalle en lugar de omitirse')
 
-  const columnasCsv = componentSource.match(/const columnasExportacion = \[([\s\S]*?)\n\]/)?.[1] ?? ''
-  assert.match(columnasCsv, /\['Ciudad', \(row\) => getCiudadActivacion\(row\)\]/)
-  assert.match(columnasCsv, /\['Plaza Base', \(row\) => row\.plaza_base_registro\]/)
-  assert.match(columnasCsv, /\['Plaza Efectiva', \(row\) => row\.plaza_efectiva_registro\]/)
-
-  const columnasExcel = componentSource.match(/const columnasExcelPersonalizado = \[([\s\S]*?)\n\]/)?.[1] ?? ''
-  assert.match(columnasExcel, /\['Ciudad', \(row\) => etiquetaCiudadActivacion\(row\)\]/)
-  assert.doesNotMatch(columnasExcel, /plaza_efectiva_registro/)
+  const columnaCiudad = COLUMNAS_EXCEL.find(([header]) => header === 'Ciudad')[1]
+  assert.equal(columnaCiudad({ ciudad_activacion: 'el_alto', plaza_efectiva_registro: 'La Paz' }), 'El Alto')
 })
 
 test('el dashboard calcula la ciudad solo desde ciudad_activacion', () => {
@@ -168,14 +160,9 @@ test('el dashboard calcula la ciudad solo desde ciudad_activacion', () => {
   assert.doesNotMatch(identidadSource, /pid:/, 'la ciudad no se resuelve por el UUID de la plaza organizacional')
 })
 
-test('el Excel del servidor filtra y exporta con la misma función de ciudad', () => {
+test('la exportación filtra con la misma función de ciudad', () => {
   assert.match(serverExcelSource, /mismaCiudad\(etiquetaCiudadActivacion\(row\), filters\.plaza\)/)
   assert.match(serverExcelSource, /normalizarPlazaClave\(value\)\.includes\(normalizarPlazaClave\(search\)\)/)
-  assert.match(serverExcelSource, /ciudad: etiquetaCiudadActivacion\(row\)/)
-  assert.match(serverExcelSource, /\['Ciudad', 'ciudad', \d+\]/)
-  assert.match(serverExcelSource, /\['Plaza Base', 'plazaBase', \d+\]/)
-  assert.match(serverExcelSource, /\['Plaza Efectiva', 'plazaEfectiva', \d+\]/)
-  assert.doesNotMatch(serverExcelSource, /getCiudad|plaza_efectiva_registro \?\? row\.ciudad_activacion/)
 })
 
 test('el filtro del listado normaliza la ciudad igual que la exportación', () => {

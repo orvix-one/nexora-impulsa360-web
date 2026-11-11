@@ -127,10 +127,10 @@ test('/export-rows devuelve el corte filtrado completo con enlaces de evidencia 
     assert.deepEqual(ids(lider).sort(), [ACT.f1, ACT.f2, ACT.f5].sort())
   }))
 
-test('el conteo de /page coincide con las filas del Excel del servidor para los mismos filtros', () =>
+test('el conteo de /page coincide con las filas de la exportación para los mismos filtros', () =>
   conPortal(async ({ get }) => {
     const query = 'plaza=la%20paz&impulsador=ana&fechaDesde=2026-10-02&fechaHasta=2026-10-05'
     const pagina = await json(await get(`/portal/activations/page?${query}`, TOKENS.admin))
-    const excel = await get(`/portal/activations/export-excel?${query}`, TOKENS.admin)
-    assert.equal(String(pagina.total), excel.headers.get('x-export-row-count'))
+    const exportacion = await json(await get(`/portal/activations/export-rows?${query}`, TOKENS.admin))
+    assert.equal(pagina.total, exportacion.activations.length)
   }))

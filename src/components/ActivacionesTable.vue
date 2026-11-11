@@ -1,7 +1,7 @@
 <script setup>
 import { computed, ref, onBeforeUnmount, onMounted, watch } from 'vue'
 import { apiRequest, apiUrl } from '../lib/api'
-import { fetchActivacionDetalle, fetchActivacionesExportacion, fetchExcelExport } from '../lib/activacionesService'
+import { fetchActivacionDetalle, fetchActivacionesExportacion } from '../lib/activacionesService'
 import {
   notifyError,
   notifyInfo,
@@ -13,15 +13,16 @@ import { isValidEmail, normalizeEmail, normalizeText } from '../lib/textUtils'
 import { useAuth } from '../lib/authStore'
 import { etiquetaCiudadActivacion } from '../lib/plazas'
 import { zonasParaCiudad } from '../lib/zonasActivacion'
-import { neutralizeExportRow, neutralizeSpreadsheetFormula } from '../lib/exportSafety'
 import { logClientError } from '../lib/logging'
+import { MIME_XLSX, descargarArchivo } from '../lib/reportes/descarga'
+import { NOMBRE_ARCHIVO_EXCEL, generarExcel } from '../lib/reportes/excel'
+import { generarReporteYolopago, nombreArchivoYolopago } from '../lib/reportes/yolopago/generar'
 import {
   ACTIVATION_CATEGORIES,
   ACTIVATION_ERROR_TYPES,
   ACTIVATION_TYPES_BY_CATEGORY,
   COMMERCE_CATEGORIES,
   STORE_SIZES,
-  activationCategoryLabel,
   inferActivationCategory,
   isCreditosEligible,
   isGeneralCommerce,
@@ -130,20 +131,6 @@ watch([filtroPlaza, filtroDistrito, filtroImpulsador, filtroFechaDesde, filtroFe
 })
 onBeforeUnmount(() => clearTimeout(temporizadorFiltros))
 
-function csvEscape(value) {
-  if (value === null || value === undefined) {
-    return ''
-  }
-
-  const normalized = String(neutralizeSpreadsheetFormula(value)).replace(/"/g, '""')
-
-  if (/[";\r\n]/.test(normalized)) {
-    return `"${normalized}"`
-  }
-
-  return normalized
-}
-
 function getFotoUrl(fotoUrl, signedUrl = '') {
   if (signedUrl) {
     return signedUrl
@@ -154,22 +141,6 @@ function getFotoUrl(fotoUrl, signedUrl = '') {
   }
 
   return fotoUrl
-}
-
-function absoluteEvidenceUrl(relativePath) {
-  return relativePath ? apiUrl(relativePath) : ''
-}
-
-function evidenciaHyperlinkCell(relativePath) {
-  const url = absoluteEvidenceUrl(relativePath)
-  return url ? { text: 'Ver foto', hyperlink: url } : ''
-}
-
-function getFechaExcelDate(row) {
-  const candidato = row?.created_at ?? row?.fecha_activacion ?? ''
-  if (!candidato) return ''
-  const fecha = candidato instanceof Date ? candidato : new Date(candidato)
-  return Number.isNaN(fecha.getTime()) ? '' : fecha
 }
 
 
@@ -251,42 +222,6 @@ function formatearValor(value, key) {
   }
   if (typeof value === 'object') return JSON.stringify(value)
   return String(value)
-}
-
-function valorBooleano(value) {
-  return value == null ? '' : value ? 'Si' : 'No'
-}
-
-function primerValor(row, keys) {
-  for (const key of keys) {
-    if (tieneValor(row[key])) return row[key]
-  }
-  return ''
-}
-
-function normalizarTipoValor(value) {
-  return normalizeText(value)
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[_-]+/g, ' ')
-}
-
-function tipoNormalizado(row) {
-  return `${normalizarTipoValor(row.tipo_activacion)} ${normalizarTipoValor(row.tipo_comercio)} ${normalizarTipoValor(row.tipo_tienda)} ${normalizarTipoValor(row.tamano_tienda)}`
-}
-
-function esTiendaBarrioRow(row) {
-  const tipo = tipoNormalizado(row)
-  return tipo.includes('tienda') || tipo.includes('barrio')
-}
-
-function esComercioRow(row) {
-  return tipoNormalizado(row).includes('comercio')
-}
-
-function esTranseunteRow(row) {
-  const tipo = tipoNormalizado(row)
-  return tipo.includes('transeunte') || tipo.includes('transeúnte')
 }
 
 const seccionesDetalleConfig = [
@@ -675,244 +610,37 @@ async function eliminarActivacion(activacion) {
   }
 }
 
-function descargarArchivo({ filename, content, mimeType }) {
-  const blob = new Blob([content], { type: mimeType })
-  const objectUrl = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-
-  link.href = objectUrl
-  link.download = filename
-  document.body.appendChild(link)
-  link.click()
-  document.body.removeChild(link)
-
-  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000)
-}
-
-function getDatosParaExportar() {
-  return fetchActivacionesExportacion(filtrosActuales())
-}
-
-const columnasExportacion = [
-  ['#', (_row, index) => index + 1],
-  ['Creado', (row) => formatCreatedAtBolivia(row.created_at, { emptyValue: '' })],
-  ['Fecha', (row) => row.fecha_activacion],
-  ['Impulsador', (row) => row.impulsador],
-  ['Ciudad', (row) => getCiudadActivacion(row)],
-  ['Distrito', (row) => row.zona_activacion],
-  ['Equipo', (row) => row.equipo_nombre_registro ?? row.equipo_numero_registro],
-  ['Facturador', (row) => row.facturador_nombre_registro],
-  ['Lider Vigente', (row) => row.lider_nombre_registro],
-  ['Plaza Base', (row) => row.plaza_base_registro],
-  ['Plaza ID', (row) => row.plaza_id_registro],
-  ['Plaza Efectiva', (row) => row.plaza_efectiva_registro],
-  ['Nombres Cliente', (row) => row.nombres_cliente],
-  ['Apellidos Cliente', (row) => row.apellidos_cliente],
-  ['CI Cliente', (row) => row.ci_cliente],
-  ['Telefono Cliente', (row) => row.telefono_cliente],
-  ['Email Cliente', (row) => row.email_cliente],
-  ['Descargo App', (row) => (row.descargo_app ? 'Si' : 'No')],
-  ['Registro', (row) => (row.registro ? 'Si' : 'No')],
-  ['Cash In', (row) => (row.cash_in ? 'Si' : 'No')],
-  ['Cash Out', (row) => (row.cash_out ? 'Si' : 'No')],
-  ['P2P', (row) => (row.p2p ? 'Si' : 'No')],
-  ['QR Fisico', (row) => (row.qr_fisico ? 'Si' : 'No')],
-  ['Respaldo', (row) => (row.respaldo ? 'Si' : 'No')],
-  ['Hubo Error', (row) => (row.hubo_error ? 'Si' : 'No')],
-  ['Descripcion Error', (row) => row.descripcion_error],
-  ['Categoría', (row) => activationCategoryLabel(row)],
-  ['Subtipo', (row) => row.tipo_activacion],
-  ['Tipo Comercio', (row) => row.tipo_comercio],
-  ['Tamano Tienda', (row) => row.tamano_tienda],
-  ['Tipo Tienda', (row) => row.tipo_tienda],
-  ['Rubro Comercio', (row) => row.rubro_comercio],
-  ['Otro Rubro', (row) => row.rubro_comercio_otro],
-  ['Comercio Fuera de Mercado', (row) => row.comercio_fuera_mercado == null ? '' : row.comercio_fuera_mercado ? 'Si' : 'No'],
-  ['Tipo Error', (row) => row.tipo_error],
-  ['Observaciones', (row) => row.observaciones],
-  ['Es Plaza Temporal', (row) => row.es_plaza_temporal == null ? '' : row.es_plaza_temporal ? 'Si' : 'No'],
-  ['Plaza Temporal', (row) => row.plaza_temporal],
-  ['Foto URL', (row) => absoluteEvidenceUrl(row.foto_url_evidencia)],
-  ['Foto Cash-In / Reporte', (row) => absoluteEvidenceUrl(row.foto_cash_in_evidencia)],
-  ['Latitud', (row) => row.latitud],
-  ['Longitud', (row) => row.longitud],
-  ['Usuario ID', (row) => row.usuario_id],
-  ['Creditos', (row) => (row.creditos ? 'Si' : 'No')],
-  ['Remesas', (row) => (row.remesas ? 'Si' : 'No')],
-]
-
-const checklistExcel = [
-  ['Checklist - Descargó App', (row) => valorBooleano(row.descargo_app)],
-  ['Checklist - Registro', (row) => valorBooleano(row.registro)],
-  ['Checklist - Cash-In', (row) => valorBooleano(row.cash_in)],
-  ['Checklist - Cash-Out', (row) => valorBooleano(row.cash_out)],
-  ['Checklist - P2P', (row) => valorBooleano(row.p2p)],
-  ['Checklist - QR Físico', (row) => valorBooleano(row.qr_fisico)],
-  ['Checklist - Respaldo', (row) => valorBooleano(row.respaldo)],
-]
-
-const columnasExcelPersonalizado = [
-  ['Fecha de la Activación', (row) => getFechaExcelDate(row)],
-  ['Ciudad', (row) => etiquetaCiudadActivacion(row)],
-  ['Zona de Activación', (row) => row.zona_activacion],
-  ['Categoría', (row) => activationCategoryLabel(row)],
-  ['Subtipo', (row) => row.tipo_activacion],
-  ['Tienda Barrio - Tamaño', (row) => tieneValor(row.tamano_tienda) ? row.tamano_tienda : esTiendaBarrioRow(row) ? primerValor(row, ['tipo_tienda']) : ''],
-  ['Tienda Barrio - Subtipo', (row) => tieneValor(row.tamano_tienda) ? 'Tienda de Barrio' : esTiendaBarrioRow(row) ? primerValor(row, ['tipo_activacion', 'tipo_comercio']) : ''],
-  ['Comercio - Tipo de Comercio', (row) => esComercioRow(row) ? row.tipo_comercio : ''],
-  ['Comercio - Rubro', (row) => {
-    const rubro = [row.rubro_comercio, row.rubro_comercio_otro].filter(Boolean).join(' - ')
-    if (esComercioRow(row)) return rubro
-    return rubro || ''
-  }],
-  ['Comercio - Fuera del mercado', (row) => {
-    if (esComercioRow(row)) return valorBooleano(row.comercio_fuera_mercado)
-    return row.comercio_fuera_mercado == null ? '' : valorBooleano(row.comercio_fuera_mercado)
-  }],
-  ['Transeúnte - Subtipo', (row) => esTranseunteRow(row) ? row.tipo_activacion : ''],
-  ['Nombre del Activador', (row) => row.impulsador],
-  ['Nombre', (row) => row.nombres_cliente],
-  ['Apellidos', (row) => row.apellidos_cliente],
-  ['Cédula', (row) => row.ci_cliente],
-  ['Teléfono', (row) => row.telefono_cliente],
-  ['Correo', (row) => row.email_cliente],
-  ['Foto de la Activación', (row) => evidenciaHyperlinkCell(row.foto_url_evidencia)],
-  ['Foto Cash-In / Reporte', (row) => evidenciaHyperlinkCell(row.foto_cash_in_evidencia)],
-  ...checklistExcel,
-  ['Hubo Error', (row) => valorBooleano(row.hubo_error)],
-  ['Tipo de Error', (row) => row.tipo_error],
-  ['Descripción del Error', (row) => row.descripcion_error],
-  ['Créditos', (row) => (row.creditos ? 'Si' : 'No')],
-  ['Remesas', (row) => (row.remesas ? 'Si' : 'No')],
-]
-
-async function exportarACsv() {
-  exportandoExcel.value = true
-  let datos
-  try {
-    datos = await getDatosParaExportar()
-  } catch (error) {
-    logClientError('activaciones.export.csv', error)
-    notifyError(getErrorMessage(error))
-    return
-  } finally {
-    exportandoExcel.value = false
-  }
-
-  if (!datos.length) {
-    notifyInfo('No hay datos para exportar con los filtros actuales.')
-    return
-  }
-
-  const csvLines = []
-  csvLines.push(columnasExportacion.map(([header]) => csvEscape(header)).join(';'))
-
-  for (const [index, row] of datos.entries()) {
-    const values = columnasExportacion.map(([, getValue]) =>
-      csvEscape(getValue(row, index))
-    )
-    csvLines.push(values.join(';'))
-  }
-
-  descargarArchivo({
-    filename: 'activaciones.csv',
-    content: `\uFEFF${csvLines.join('\r\n')}`,
-    mimeType: 'text/csv;charset=utf-8;',
-  })
-
-  notifySuccess('CSV exportado correctamente.')
-}
-
-async function exportarAExcelConImagenes() {
+async function exportar(contexto, generar) {
   exportandoExcel.value = true
   try {
-    const response = await fetchExcelExport(filtrosActuales())
-    if (response.headers.get('X-Export-Version') !== 'links-v2') {
-      throw new Error('La API respondio con una version antigua de la exportacion. Vuelve a desplegar el backend.')
-    }
-
-    const rowCount = Number(response.headers.get('X-Export-Row-Count')) || 0
-    const imageMode = response.headers.get('X-Export-Images')
-    descargarArchivo({
-      filename: 'activaciones.xlsx',
-      content: await response.arrayBuffer(),
-      mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    })
-    notifySuccess(
-      imageMode === 'links'
-        ? `Excel exportado con ${rowCount} registros y enlaces a imagenes.`
-        : `Excel exportado con ${rowCount} registros e imagenes.`
-    )
-  } catch (error) {
-    logClientError('activaciones.export.excel-servidor', error)
-    notifyError(getErrorMessage(error))
-  } finally {
-    exportandoExcel.value = false
-  }
-}
-
-async function descargarExcelPersonalizado() {
-  exportandoExcel.value = true
-  try {
-    const datos = await getDatosParaExportar()
+    const filtros = filtrosActuales()
+    const datos = await fetchActivacionesExportacion(filtros)
     if (!datos.length) {
       notifyInfo('No hay datos para exportar con los filtros actuales.')
       return
     }
 
     const ExcelJS = await import('exceljs')
-    const workbook = new ExcelJS.Workbook()
-    workbook.creator = 'Impulsa 360'
-    workbook.created = new Date()
-    const worksheet = workbook.addWorksheet('Activaciones')
-
-    worksheet.columns = columnasExcelPersonalizado.map(([header]) => ({
-      header,
-      key: header,
-      width: Math.max(14, Math.min(36, String(header).length + 4)),
-    }))
-    worksheet.views = [{ state: 'frozen', ySplit: 1 }]
-    worksheet.autoFilter = { from: 'A1', to: `${worksheet.getColumn(columnasExcelPersonalizado.length).letter}1` }
-    worksheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } }
-    worksheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1769FF' } }
-    worksheet.getRow(1).alignment = { vertical: 'middle', wrapText: true }
-
-    datos.forEach((row) => {
-      worksheet.addRow(neutralizeExportRow(Object.fromEntries(columnasExcelPersonalizado.map(([header, getValue]) => [header, getValue(row) ?? '']))))
-    })
-    worksheet.getColumn('Fecha de la Activación').eachCell({ includeEmpty: false }, (cell, rowNumber) => {
-      if (rowNumber > 1 && cell.value instanceof Date) {
-        cell.numFmt = 'dd/mm/yyyy hh:mm'
-      }
-    })
-    worksheet.eachRow((row) => {
-      row.eachCell((cell) => {
-        cell.alignment = { vertical: 'top', wrapText: true }
-        cell.border = {
-          top: { style: 'thin', color: { argb: 'FFDCE8F4' } },
-          left: { style: 'thin', color: { argb: 'FFDCE8F4' } },
-          bottom: { style: 'thin', color: { argb: 'FFDCE8F4' } },
-          right: { style: 'thin', color: { argb: 'FFDCE8F4' } },
-        }
-        if (cell.value && typeof cell.value === 'object' && cell.value.hyperlink) {
-          cell.font = { color: { argb: 'FF0563C1' }, underline: true }
-        }
-      })
-    })
-
-    descargarArchivo({
-      filename: 'activaciones-personalizado.xlsx',
-      content: await workbook.xlsx.writeBuffer(),
-      mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    })
-    notifySuccess(`Excel descargado con ${datos.length} registros filtrados.`)
+    const { content, filename } = await generar(ExcelJS, datos, filtros)
+    descargarArchivo({ filename, content, mimeType: MIME_XLSX })
+    notifySuccess(`Excel exportado con ${datos.length} registros.`)
   } catch (error) {
-    logClientError('activaciones.export.excel-personalizado', error)
+    logClientError(`activaciones.export.${contexto}`, error)
     notifyError(getErrorMessage(error))
   } finally {
     exportandoExcel.value = false
   }
 }
+
+const exportarExcel = () => exportar('excel', async (ExcelJS, datos) => ({
+  filename: NOMBRE_ARCHIVO_EXCEL,
+  content: await generarExcel(ExcelJS, datos, { urlEvidencia: apiUrl }),
+}))
+
+const exportarExcelYolopago = () => exportar('yolopago', async (ExcelJS, datos, filtros) => ({
+  filename: nombreArchivoYolopago(filtros),
+  content: await generarReporteYolopago(ExcelJS, datos, { urlEvidencia: apiUrl }),
+}))
 
 </script>
 
@@ -968,16 +696,8 @@ async function descargarExcelPersonalizado() {
 
     <div class="toolbar-line">
       <div class="toolbar-actions">
-        <button type="button" class="boton-exportar" :disabled="exportandoExcel || deletingActivationId" @click="exportarACsv">Exportar CSV</button>
-        <button
-          type="button"
-          class="boton-exportar boton-exportar-excel"
-          :disabled="exportandoExcel || deletingActivationId"
-          @click="exportarAExcelConImagenes"
-        >
-          {{ exportandoExcel ? 'Generando Excel en servidor...' : 'Exportar Excel + Imagenes' }}
-        </button>
-        <button type="button" class="boton-exportar boton-exportar-excel" :disabled="exportandoExcel || deletingActivationId || !total" @click="descargarExcelPersonalizado">Descargar Excel</button>
+        <button type="button" class="boton-exportar boton-exportar-excel" :disabled="exportandoExcel || deletingActivationId || !total" @click="exportarExcel">Exportar Excel</button>
+        <button type="button" class="boton-exportar boton-exportar-yolopago" :disabled="exportandoExcel || deletingActivationId || !total" @click="exportarExcelYolopago">Exportar Excel Yolopago</button>
       </div>
       <span class="meta-pill">{{ loading ? 'Cargando...' : `${total} registros` }}</span>
     </div>

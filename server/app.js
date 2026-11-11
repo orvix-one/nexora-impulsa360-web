@@ -1,7 +1,7 @@
 import crypto from 'node:crypto'
 import express from 'express'
 import { createClient } from '@supabase/supabase-js'
-import { fetchActivaciones, generateActivacionesExcel } from './activacionesExcel.js'
+import { fetchActivaciones } from './activacionesExportacion.js'
 import { aplicarAlcanceLider, esUuid, resolverAlcanceLider } from './alcanceLider.js'
 import { resolvePortalUser } from './portalAuth.js'
 import { resolveStorageObjectPathFromFotoUrl } from './storagePaths.js'
@@ -120,29 +120,6 @@ export function verifyEvidenceToken(secret, activacionId, tipo, objectPath, toke
   return timingSafeEqualText(String(token), buildEvidenceToken(secret, activacionId, tipo, objectPath))
 }
 
-function resolveEvidencePublicBaseUrl(rawValue) {
-  const normalized = normalizeText(rawValue).replace(/\/+$/, '')
-
-  if (!/^https?:\/\/[^/]+/i.test(normalized)) {
-    return null
-  }
-
-  if (normalized.toLowerCase().startsWith('http://')) {
-    let hostname = ''
-
-    try {
-      hostname = new URL(normalized).hostname.toLowerCase()
-    } catch {
-      return null
-    }
-
-    if (hostname !== 'localhost' && hostname !== '127.0.0.1') {
-      return null
-    }
-  }
-
-  return normalized
-}
 const ACTIVATION_PHOTO_TYPES = Object.freeze({
   'image/jpeg': 'jpg',
   'image/png': 'png',
@@ -1105,7 +1082,6 @@ export function createAdminApiApp({ env = process.env, adminSupabase: injectedSu
       res.setHeader('Vary', 'Origin')
       res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS')
       res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization')
-      res.setHeader('Access-Control-Expose-Headers', 'X-Export-Row-Count,X-Export-Images,X-Export-Version')
     }
 
     if (req.method === 'OPTIONS') {
@@ -1247,45 +1223,6 @@ export function createAdminApiApp({ env = process.env, adminSupabase: injectedSu
     const resolvedUsers = users.map((item) => ({ ...item, lider_nombre: leaderNames.get(item.lider_id) ?? null }))
     res.json({ users: withAccessFlag(await attachUserRoles(await enrichUsersWithOrganization(resolvedUsers))) })
   }))
-  app.get('/portal/activations/export-excel', asyncRoute(async (req, res) => {
-    const { alcance, error: teamError } = await resolverAlcanceLider(adminSupabase, req.user)
-    if (teamError) {
-      jsonError(res, 500, 'No se pudo resolver el equipo.', teamError.message)
-      return
-    }
-
-    const filters = {
-      plaza: normalizeText(req.query.plaza),
-      distrito: normalizeText(req.query.distrito),
-      impulsador: normalizeText(req.query.impulsador),
-      fechaDesde: normalizeText(req.query.fechaDesde),
-      fechaHasta: normalizeText(req.query.fechaHasta),
-    }
-    const evidenceBaseUrl = resolveEvidencePublicBaseUrl(env.EVIDENCE_PUBLIC_BASE_URL)
-    if (!evidenceBaseUrl) {
-      jsonError(res, 500, 'Enlaces de evidencia no configurados.')
-      return
-    }
-    const result = await generateActivacionesExcel({
-      adminSupabase,
-      bucket: activacionesBucket,
-      filters,
-      alcance,
-      buildEvidenceUrl: (activacionId, tipo, objectPath) => `${evidenceBaseUrl}${buildEvidencePath(
-        activacionId,
-        tipo,
-        buildEvidenceToken(env.EVIDENCE_LINK_SECRET, activacionId, tipo, objectPath),
-      )}`,
-    })
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-    res.setHeader('Content-Disposition', 'attachment; filename="activaciones.xlsx"')
-    sinCache(res)
-    res.setHeader('X-Export-Row-Count', String(result.rowCount))
-    res.setHeader('X-Export-Images', 'links')
-    res.setHeader('X-Export-Version', 'links-v2')
-    res.send(Buffer.from(result.buffer))
-  }))
-
   const obtenerCiudades = crearCatalogoCiudades(adminSupabase)
   app.get('/portal/activations/page', asyncRoute(async (req, res) => {
     const filtros = normalizarFiltros(req.query)

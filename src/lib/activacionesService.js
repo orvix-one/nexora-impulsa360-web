@@ -30,9 +30,3 @@ export async function fetchActivacionesExportacion(filtros) {
   const payload = await apiRequest(`/portal/activations/export-rows?${filtrosAQuery(filtros)}`)
   return payload.activations ?? []
 }
-
-export function fetchExcelExport(filtros) {
-  const params = filtrosAQuery(filtros)
-  params.set('exportVersion', 'links-v2')
-  return apiRequest(`/portal/activations/export-excel?${params}`, { raw: true, cache: 'no-store' })
-}
