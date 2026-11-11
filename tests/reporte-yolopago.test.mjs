@@ -4,6 +4,7 @@ import ExcelJS from 'exceljs'
 import { ACTIVATION_TYPES_BY_CATEGORY } from '../src/lib/activationEditing.js'
 import { aFilaYolopago } from '../src/lib/reportes/yolopago/adaptador.js'
 import { COLUMNAS_YOLOPAGO } from '../src/lib/reportes/yolopago/columnas.js'
+import { nombreArchivoExcel } from '../src/lib/reportes/excel.js'
 import { HOJA_YOLOPAGO, generarReporteYolopago, nombreArchivoYolopago } from '../src/lib/reportes/yolopago/generar.js'
 import { etiquetaSubtipo } from '../src/lib/reportes/yolopago/vocabulario.js'
 
@@ -100,9 +101,7 @@ test('el libro generado tiene la hoja, los encabezados y neutraliza fórmulas', 
 })
 
 test('nombre de archivo por quincena o rango', () => {
-  assert.equal(nombreArchivoYolopago({ fechaDesde: '2026-10-16', fechaHasta: '2026-10-31' }), 'ACTIVACIONES OCT 2Q.xlsx')
-  assert.equal(nombreArchivoYolopago({ fechaDesde: '2026-10-01', fechaHasta: '2026-10-15' }), 'ACTIVACIONES OCT 1Q.xlsx')
-  assert.equal(nombreArchivoYolopago({ fechaDesde: '2026-02-16', fechaHasta: '2026-02-28' }), 'ACTIVACIONES FEB 2Q.xlsx')
-  assert.equal(nombreArchivoYolopago({ fechaDesde: '2026-10-03', fechaHasta: '2026-10-09' }), 'ACTIVACIONES 2026-10-03 a 2026-10-09.xlsx')
-  assert.equal(nombreArchivoYolopago({}), 'ACTIVACIONES.xlsx')
+  assert.equal(nombreArchivoYolopago({ fechaDesde: '2026-10-16', fechaHasta: '2026-10-31' }), 'activaciones_yolopago_2026-10-16_2026-10-31.xlsx')
+  assert.equal(nombreArchivoYolopago({}), 'activaciones_yolopago.xlsx')
+  assert.equal(nombreArchivoExcel({ fechaDesde: '2026-10-16', fechaHasta: '2026-10-31' }), 'activaciones_2026-10-16_2026-10-31.xlsx')
 })

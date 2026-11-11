@@ -3,10 +3,11 @@
 import { activationCategoryLabel } from '../activationEditing.js'
 import { neutralizeExportRow } from '../exportSafety.js'
 import { etiquetaCiudadActivacion } from '../plazas.js'
+import { nombreArchivoReporte } from './nombreArchivo.js'
 import { aFechaExcelLaPaz, aFechaSolo } from './fechas.js'
 import { siNo } from './valores.js'
 
-export const NOMBRE_ARCHIVO_EXCEL = 'activaciones.xlsx'
+export const nombreArchivoExcel = (filtros) => nombreArchivoReporte('activaciones', filtros)
 const HOJA_EXCEL = 'Activaciones'
 const ENCABEZADO_FECHA = 'Fecha de la Activación'
 

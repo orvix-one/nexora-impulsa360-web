@@ -1,11 +1,11 @@
 // @ts-check
 import { neutralizeSpreadsheetFormula } from '../../exportSafety.js'
 import { aFilaYolopago } from './adaptador.js'
+import { nombreArchivoReporte } from '../nombreArchivo.js'
 import { COLUMNAS_YOLOPAGO } from './columnas.js'
 
 export const HOJA_YOLOPAGO = 'Hoja 1'
 
-const MESES = ['ENE', 'FEB', 'MAR', 'ABR', 'MAY', 'JUN', 'JUL', 'AGO', 'SEP', 'OCT', 'NOV', 'DIC']
 const FUENTE = { name: 'Arial', size: 10 }
 
 /**
@@ -38,26 +38,4 @@ export async function generarReporteYolopago(ExcelJS, activaciones, opciones) {
   return workbook.xlsx.writeBuffer()
 }
 
-/** @param {string} fecha `YYYY-MM-DD` */
-function partes(fecha) {
-  const match = String(fecha ?? '').match(/^(\d{4})-(\d{2})-(\d{2})$/)
-  return match ? { anio: Number(match[1]), mes: Number(match[2]), dia: Number(match[3]) } : null
-}
-
-/**
- * `ACTIVACIONES OCT 2Q.xlsx` when the range is exactly one quincena, otherwise the range itself.
- * @param {{ fechaDesde?: string, fechaHasta?: string }} filtros
- */
-export function nombreArchivoYolopago({ fechaDesde, fechaHasta } = {}) {
-  const desde = partes(fechaDesde ?? '')
-  const hasta = partes(fechaHasta ?? '')
-  if (desde && hasta && desde.anio === hasta.anio && desde.mes === hasta.mes) {
-    const ultimoDia = new Date(Date.UTC(desde.anio, desde.mes, 0)).getUTCDate()
-    const mes = MESES[desde.mes - 1]
-    if (desde.dia === 1 && hasta.dia === 15) return `ACTIVACIONES ${mes} 1Q.xlsx`
-    if (desde.dia === 16 && hasta.dia === ultimoDia) return `ACTIVACIONES ${mes} 2Q.xlsx`
-  }
-  const rango = [fechaDesde, fechaHasta].filter(Boolean)
-  if (!rango.length) return 'ACTIVACIONES.xlsx'
-  return `ACTIVACIONES ${rango.join(' a ')}.xlsx`
-}
+export const nombreArchivoYolopago = (filtros) => nombreArchivoReporte('activaciones_yolopago', filtros)

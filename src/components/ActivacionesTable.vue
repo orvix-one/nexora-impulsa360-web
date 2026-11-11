@@ -15,7 +15,7 @@ import { etiquetaCiudadActivacion } from '../lib/plazas'
 import { zonasParaCiudad } from '../lib/zonasActivacion'
 import { logClientError } from '../lib/logging'
 import { MIME_XLSX, descargarArchivo } from '../lib/reportes/descarga'
-import { NOMBRE_ARCHIVO_EXCEL, generarExcel } from '../lib/reportes/excel'
+import { generarExcel, nombreArchivoExcel } from '../lib/reportes/excel'
 import { generarReporteYolopago, nombreArchivoYolopago } from '../lib/reportes/yolopago/generar'
 import {
   ACTIVATION_CATEGORIES,
@@ -632,8 +632,8 @@ async function exportar(contexto, generar) {
   }
 }
 
-const exportarExcel = () => exportar('excel', async (ExcelJS, datos) => ({
-  filename: NOMBRE_ARCHIVO_EXCEL,
+const exportarExcel = () => exportar('excel', async (ExcelJS, datos, filtros) => ({
+  filename: nombreArchivoExcel(filtros),
   content: await generarExcel(ExcelJS, datos, { urlEvidencia: apiUrl }),
 }))
 
