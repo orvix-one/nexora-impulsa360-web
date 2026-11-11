@@ -19,9 +19,11 @@ test('/page y /metrics ordenan por created_at DESC con id ASC como desempate est
     ['/page', handlerPage(serverSource)],
     ['/metrics', metricasSource],
   ]) {
+    const ordenActivacion = codigo.indexOf(".order('fecha_activacion', { ascending: false, nullsFirst: false })")
     const ordenFecha = codigo.indexOf(".order('created_at', { ascending: false })")
     const ordenId = codigo.indexOf(".order('id', { ascending: true })")
     const rango = codigo.indexOf('.range(')
+    assert.ok(ordenActivacion >= 0 && ordenFecha > ordenActivacion, `${nombre}: fecha_activacion DESC va primero`)
     assert.ok(ordenFecha >= 0, `${nombre}: falta order created_at DESC`)
     assert.ok(ordenId > ordenFecha, `${nombre}: el desempate por id va despues del orden por created_at`)
     assert.ok(rango > ordenId, `${nombre}: ambos order se aplican antes de range`)

@@ -42,7 +42,8 @@ export async function ejecutarConConcurrencia(tareas, limite) {
 export async function cargarActivacionesMetricas({ construirConsulta, pageSize = 1000, concurrencia = 4 }) {
   const pagina = (indice, options) =>
     construirConsulta(SELECT_METRICAS_ACTIVACIONES, options)
-      ?.order('created_at', { ascending: false })
+      ?.order('fecha_activacion', { ascending: false, nullsFirst: false })
+      .order('created_at', { ascending: false })
       .order('id', { ascending: true })
       .range(indice * pageSize, indice * pageSize + pageSize - 1)
 

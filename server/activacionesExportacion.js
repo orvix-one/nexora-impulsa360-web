@@ -26,7 +26,10 @@ function matchesTextFilters(row, filters) {
 export async function fetchActivaciones(adminSupabase, filters, alcance) {
   const rows = []
   for (let from = 0; ; from += PAGE_SIZE) {
-    let query = adminSupabase.from('activaciones').select('*').order('created_at', { ascending: false })
+    let query = adminSupabase.from('activaciones').select('*')
+      .order('fecha_activacion', { ascending: false, nullsFirst: false })
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: true })
     query = applyFilters(query, filters)
     if (alcance) {
       const acotado = aplicarAlcanceLider(query, alcance)

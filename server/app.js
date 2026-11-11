@@ -1239,6 +1239,7 @@ export function createAdminApiApp({ env = process.env, adminSupabase: injectedSu
     if (!base) { res.json({ activations: [], total: 0, page, pageSize }); return }
     const from = (page - 1) * pageSize
     const { data, count, error } = await base
+      .order('fecha_activacion', { ascending: false, nullsFirst: false })
       .order('created_at', { ascending: false })
       .order('id', { ascending: true })
       .range(from, from + pageSize - 1)
