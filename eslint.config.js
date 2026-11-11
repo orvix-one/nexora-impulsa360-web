@@ -19,7 +19,7 @@ export default [
     languageOptions: { globals: { ...globals.browser } },
   },
   {
-    files: ['server/**/*.js', 'api/**/*.js', 'tests/**/*.mjs', 'vite.config.js', 'eslint.config.js'],
+    files: ['server/**/*.js', 'api/**/*.js', 'scripts/**/*.mjs', 'tests/**/*.mjs', 'vite.config.js', 'eslint.config.js'],
     languageOptions: { globals: { ...globals.node } },
   },
 ]

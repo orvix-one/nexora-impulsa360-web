@@ -53,3 +53,26 @@ export async function resolvePortalUser(adminSupabase, authorization) {
     .maybeSingle()
   return buildPortalUser(profile)
 }
+
+/**
+ * Mobile app callers: any active activadores profile, regardless of role.
+ * @param {import('@supabase/supabase-js').SupabaseClient} adminSupabase Service-role client.
+ * @param {string | undefined} authorization Raw `Authorization` header.
+ * @returns {Promise<{ authUserId: string, token: string, usuario_id: string } | null>}
+ */
+export async function resolveMovilUser(adminSupabase, authorization) {
+  if (typeof authorization !== 'string' || !authorization.startsWith('Bearer ')) return null
+
+  const token = authorization.slice(7)
+  const { data, error } = await adminSupabase.auth.getClaims(token)
+  const authUserId = data?.claims?.sub
+  if (error || !authUserId) return null
+
+  const { data: profile } = await adminSupabase
+    .from('activadores')
+    .select('usuario_id,estado')
+    .eq('auth_user_id', authUserId)
+    .maybeSingle()
+  if (!profile || profile.estado !== 'activo') return null
+  return { authUserId, token, usuario_id: profile.usuario_id }
+}

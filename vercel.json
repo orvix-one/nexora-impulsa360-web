@@ -15,5 +15,16 @@
       "src": "/(?!api(?:/|$))(?!.*\\.[^/]+$)(.*)",
       "dest": "/index.html"
     }
+  ],
+  "functions": {
+    "api/index.js": {
+      "maxDuration": 60
+    }
+  },
+  "crons": [
+    {
+      "path": "/api/cron/archivar-fotos",
+      "schedule": "0 7 * * *"
+    }
   ]
 }

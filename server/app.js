@@ -3,8 +3,11 @@ import express from 'express'
 import { createClient } from '@supabase/supabase-js'
 import { fetchActivaciones } from './activacionesExportacion.js'
 import { aplicarAlcanceLider, esUuid, resolverAlcanceLider } from './alcanceLider.js'
-import { resolvePortalUser } from './portalAuth.js'
-import { resolveStorageObjectPathFromFotoUrl } from './storagePaths.js'
+import { resolveMovilUser, resolvePortalUser } from './portalAuth.js'
+import { resolveStorageLocation, resolveStorageObjectPathFromFotoUrl, toR2StoredValue } from './storagePaths.js'
+import { createR2Storage } from './r2.js'
+import { createFotoStorage } from './fotoStorage.js'
+import { archivarFotos } from './archivarFotos.js'
 import { aplicarFiltrosActivaciones, crearCatalogoCiudades, normalizarFiltros, resolverCiudadesFiltro } from './activacionesFiltros.js'
 import { SELECT_LISTADO_ACTIVACIONES, parsearPagina } from './activacionesListado.js'
 import { parsearAliasesPlaza } from '../src/lib/plazas.js'
@@ -101,6 +104,20 @@ const EVIDENCE_LINK_RATE_LIMIT = Object.freeze({
   windowMs: 60 * 1000,
   maxRequests: 60,
 })
+const MOVIL_RATE_LIMIT = Object.freeze({
+  windowMs: 60 * 1000,
+  maxRequests: 120,
+})
+const MOVIL_PHOTO_PATH_PATTERN = /^activaciones\/([0-9a-f-]{36})\/[0-9a-f-]{36}\/(principal|cash-in)\.jpg$/
+const MOVIL_PHOTO_MAX_BYTES = 6 * 1024 * 1024
+const MOVIL_UPLOAD_URL_TTL_SECONDS = 15 * 60
+const MOVIL_READ_URL_TTL_SECONDS = 60 * 60
+const MOVIL_READ_MAX_VALUES = 20
+const PHOTO_SIGNED_TTL_SECONDS = 60 * 60
+const ARCHIVE_DEFAULT_RETENTION_DAYS = 2
+const ARCHIVE_CRON_BUDGET_MS = 50 * 1000
+const ARCHIVE_CRON_MAX_OBJECTS = 400
+const ARCHIVE_PAGE_SIZE = 100
 
 export function buildEvidenceToken(secret, activacionId, tipo, objectPath) {
   return crypto.createHmac('sha256', String(secret))
@@ -139,6 +156,7 @@ const SUPABASE_FREE_PLAN_REFERENCE = Object.freeze({
   file_storage_limit_bytes: 1 * GB,
   support: 'Community support',
 })
+const R2_FREE_PLAN_STORAGE_BYTES = 10 * GB
 const INTERNAL_TEAM_NAME = 'Equipo administrativo'
 
 function normalizeText(value) {
@@ -462,30 +480,8 @@ function resolveActivacionesBucket(env) {
   return 'fotos-activaciones'
 }
 
-async function createActivationSignedPhotoMap(adminSupabase, bucketName, rows) {
-  const entries = [...new Set(
-    rows.flatMap((row) => [row.foto_url, row.foto_cash_in]).filter(Boolean)
-  )].map((value) => [value, resolveStorageObjectPathFromFotoUrl(value, bucketName)])
-    .filter(([, path]) => path)
-  if (!entries.length) return new Map()
-
-  const signed = new Map()
-  for (let index = 0; index < entries.length; index += 100) {
-    const batch = entries.slice(index, index + 100)
-    const { data, error } = await adminSupabase.storage
-      .from(bucketName)
-      .createSignedUrls(batch.map(([, path]) => path), 60 * 60)
-    if (error) throw error
-    for (let itemIndex = 0; itemIndex < batch.length; itemIndex += 1) {
-      const signedUrl = data?.[itemIndex]?.signedUrl
-      if (signedUrl) signed.set(batch[itemIndex][0], signedUrl)
-    }
-  }
-  return signed
-}
-
-async function attachActivationSignedPhotos(adminSupabase, bucketName, rows, evidenceSecret = null) {
-  const signed = await createActivationSignedPhotoMap(adminSupabase, bucketName, rows)
+async function attachActivationSignedPhotos(fotoStorage, bucketName, rows, evidenceSecret = null) {
+  const signed = await fotoStorage.signMany(rows.flatMap((row) => [row.foto_url, row.foto_cash_in]), PHOTO_SIGNED_TTL_SECONDS)
   return rows.map((row) => ({
     ...row,
     foto_url_signed: signed.get(row.foto_url) ?? null,
@@ -734,7 +730,13 @@ function estimateCombinedActivationCapacity({
   }
 }
 
-export function createAdminApiApp({ env = process.env, adminSupabase: injectedSupabase = null, metricsPageSize = 1000 } = {}) {
+export function createAdminApiApp({
+  env = process.env,
+  adminSupabase: injectedSupabase = null,
+  r2: injectedR2,
+  createUserSupabase: injectedCreateUserSupabase = null,
+  metricsPageSize = 1000,
+} = {}) {
   assertRequiredEnv(env)
 
   const allowedOrigins = buildAllowedOrigins(env.ADMIN_API_CORS_ORIGIN)
@@ -756,6 +758,18 @@ export function createAdminApiApp({ env = process.env, adminSupabase: injectedSu
       persistSession: false,
     },
   })
+  const r2 = injectedR2 === undefined ? createR2Storage(env) : injectedR2
+  const fotoStorage = createFotoStorage({ adminSupabase, bucketName: activacionesBucket, r2 })
+  const r2UploadsEnabled = Boolean(r2) && normalizeText(env.R2_UPLOADS_ENABLED).toLowerCase() !== 'false'
+  const configuredRetentionDays = Number.parseFloat(String(env.FOTOS_RETENCION_SUPABASE_DIAS ?? ''))
+  const archiveRetentionDays = Number.isFinite(configuredRetentionDays) && configuredRetentionDays >= 0
+    ? configuredRetentionDays
+    : ARCHIVE_DEFAULT_RETENTION_DAYS
+  // auth.uid()-based SQL helpers (e.g. puede_leer_foto_activacion_equipo) must run with the caller's JWT, not the service role.
+  const createUserSupabase = injectedCreateUserSupabase ?? ((token) => createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
+    auth: { autoRefreshToken: false, persistSession: false },
+    global: { headers: { Authorization: `Bearer ${token}` } },
+  }))
 
   async function attachUserRoles(users) {
     if (!users.length) return users
@@ -1169,10 +1183,13 @@ export function createAdminApiApp({ env = process.env, adminSupabase: injectedSu
       return
     }
 
-    const { data: signedData, error: signError } = await adminSupabase.storage
-      .from(activacionesBucket)
-      .createSignedUrls([objectPath], EVIDENCE_LINK_SIGNED_TTL_SECONDS)
-    const signedUrl = signedData?.[0]?.signedUrl
+    let signedUrl = null
+    let signError = null
+    try {
+      signedUrl = (await fotoStorage.signMany([storedValue], EVIDENCE_LINK_SIGNED_TTL_SECONDS)).get(storedValue) ?? null
+    } catch (error) {
+      signError = error
+    }
 
     if (signError || !signedUrl) {
       console.error('[admin-api] No se pudo firmar una evidencia.', sanitizeLogDetails(signError))
@@ -1182,6 +1199,106 @@ export function createAdminApiApp({ env = process.env, adminSupabase: injectedSu
 
     sinCache(res)
     res.redirect(302, signedUrl)
+  }))
+
+  async function authenticateMovil(req, res, next) {
+    const user = await resolveMovilUser(adminSupabase, req.headers.authorization)
+    if (!user) { jsonError(res, 401, 'Sesion invalida o usuario inactivo.'); return }
+    req.movilUser = user
+    next()
+  }
+
+  app.use('/movil', authenticateMovil, createRateLimiter(MOVIL_RATE_LIMIT, (req) => req.movilUser.authUserId))
+
+  app.post('/movil/fotos/subida', asyncRoute(async (req, res) => {
+    const objectPath = normalizeText(req.body?.path)
+    const size = Number(req.body?.size)
+    const match = objectPath.match(MOVIL_PHOTO_PATH_PATTERN)
+
+    if (!match || match[1] !== req.movilUser.authUserId.toLowerCase()) {
+      jsonError(res, 403, 'Ruta de foto no permitida.')
+      return
+    }
+    if (!Number.isInteger(size) || size <= 0 || size > MOVIL_PHOTO_MAX_BYTES) {
+      jsonError(res, 400, 'Tamano de foto invalido (maximo 6 MB).')
+      return
+    }
+    if (!r2UploadsEnabled) {
+      res.status(409).json({ error: 'Subida directa deshabilitada.', fallback: 'supabase' })
+      return
+    }
+
+    const url = await r2.signPut(objectPath, { contentType: 'image/jpeg', contentLength: size }, MOVIL_UPLOAD_URL_TTL_SECONDS)
+    sinCache(res)
+    res.json({
+      url,
+      method: 'PUT',
+      headers: { 'content-type': 'image/jpeg' },
+      storedValue: toR2StoredValue(objectPath),
+      expiresIn: MOVIL_UPLOAD_URL_TTL_SECONDS,
+    })
+  }))
+
+  app.post('/movil/fotos/lectura', asyncRoute(async (req, res) => {
+    const values = req.body?.values
+    if (!Array.isArray(values) || !values.length || values.length > MOVIL_READ_MAX_VALUES ||
+      values.some((value) => typeof value !== 'string')) {
+      jsonError(res, 400, `values debe ser una lista de 1 a ${MOVIL_READ_MAX_VALUES} textos.`)
+      return
+    }
+
+    const ownPrefix = `activaciones/${req.movilUser.authUserId}/`
+    let userSupabase = null
+    const allowed = []
+    for (const value of new Set(values)) {
+      const location = resolveStorageLocation(value, activacionesBucket)
+      if (!location) continue
+      if (location.objectPath.startsWith(ownPrefix)) {
+        allowed.push(value)
+        continue
+      }
+      userSupabase ??= createUserSupabase(req.movilUser.token)
+      const { data: canRead, error } = await userSupabase.rpc('puede_leer_foto_activacion_equipo', { p_nombre: location.objectPath })
+      if (!error && canRead === true) allowed.push(value)
+    }
+
+    const signed = allowed.length ? await fotoStorage.signMany(allowed, MOVIL_READ_URL_TTL_SECONDS) : new Map()
+    sinCache(res)
+    res.json({ urls: Object.fromEntries(values.map((value) => [value, signed.get(value) ?? null])) })
+  }))
+
+  app.get('/cron/archivar-fotos', asyncRoute(async (req, res) => {
+    const expected = normalizeText(env.CRON_SECRET)
+    const provided = normalizeText(req.headers.authorization).replace(/^Bearer\s+/i, '')
+    if (!expected || !provided || !timingSafeEqualText(provided, expected)) {
+      jsonError(res, 401, 'No autorizado.')
+      return
+    }
+    if (!r2) {
+      jsonError(res, 503, 'R2 no esta configurado.')
+      return
+    }
+
+    const deadline = Date.now() + ARCHIVE_CRON_BUDGET_MS
+    const antesDe = new Date(Date.now() - archiveRetentionDays * 24 * 60 * 60 * 1000)
+    const total = { candidatos: 0, movidas: 0, omitidas: 0, fallidas: 0, bytes: 0, pendientesPorTiempo: 0 }
+    while (Date.now() < deadline && total.movidas + total.fallidas < ARCHIVE_CRON_MAX_OBJECTS) {
+      const pagina = await archivarFotos({
+        adminSupabase,
+        r2,
+        bucketName: activacionesBucket,
+        antesDe,
+        limite: ARCHIVE_PAGE_SIZE,
+        deadline,
+        onItem: ({ candidato, estado, motivo }) => {
+          if (estado === 'fallida') console.error('[archivar-fotos] fallida', candidato.name, motivo)
+        },
+      })
+      for (const key of Object.keys(total)) total[key] += pagina[key]
+      if (!pagina.movidas) break
+    }
+    console.log('[archivar-fotos]', JSON.stringify(total))
+    res.json({ ok: total.fallidas === 0, ...total })
   }))
 
   function withAccessFlag(users) {
@@ -1298,7 +1415,7 @@ export function createAdminApiApp({ env = process.env, adminSupabase: injectedSu
     if (!data) { jsonError(res, 404, 'Activacion no encontrada.'); return }
     try {
       const conCorreo = await attachActivationCreatorEmail(adminSupabase, [data])
-      const [activation] = await attachActivationSignedPhotos(adminSupabase, activacionesBucket, conCorreo, env.EVIDENCE_LINK_SECRET)
+      const [activation] = await attachActivationSignedPhotos(fotoStorage, activacionesBucket, conCorreo, env.EVIDENCE_LINK_SECRET)
       res.json({ activation })
     } catch (photoError) {
       jsonError(res, 500, 'No se pudo preparar enlaces seguros de evidencias.', photoError?.message)
@@ -2293,38 +2410,39 @@ export function createAdminApiApp({ env = process.env, adminSupabase: injectedSu
       }
 
       const newObjectPath = `portal-reemplazos/${photoField}/${crypto.randomUUID()}.${extension}`
-      const { error: uploadError } = await adminSupabase.storage
-        .from(activacionesBucket)
-        .upload(newObjectPath, req.body, { contentType: mimeType, upsert: false })
-      if (uploadError) {
+      let newStoredValue
+      try {
+        newStoredValue = await fotoStorage.uploadNew(newObjectPath, req.body, mimeType)
+      } catch (uploadError) {
         jsonError(res, 500, 'No se pudo guardar la nueva foto.', uploadError)
         return
       }
 
       const { data: updatedRow, error: updateError } = await adminSupabase
         .from('activaciones')
-        .update({ [photoField]: newObjectPath })
+        .update({ [photoField]: newStoredValue })
         .eq('id', activacionId)
         .select('*')
         .maybeSingle()
       if (updateError || !updatedRow?.id) {
-        const { error: cleanupError } = await adminSupabase.storage
-          .from(activacionesBucket)
-          .remove([newObjectPath])
-        if (cleanupError) console.error('[admin-api] No se pudo limpiar una foto nueva sin referencia.', sanitizeLogDetails(cleanupError))
+        try {
+          await fotoStorage.remove([newStoredValue])
+        } catch (cleanupError) {
+          console.error('[admin-api] No se pudo limpiar una foto nueva sin referencia.', sanitizeLogDetails(cleanupError))
+        }
         jsonError(res, updateError ? 500 : 404, updateError ? 'No se pudo actualizar la activacion.' : 'No se encontro la activacion indicada.', updateError)
         return
       }
 
-      const previousObjectPath = resolveStorageObjectPathFromFotoUrl(
-        existingRow[photoField],
-        activacionesBucket
-      )
+      const previousStoredValue = existingRow[photoField]
       let warning = null
-      if (previousObjectPath && previousObjectPath !== newObjectPath) {
-        const { error: removePreviousError } = await adminSupabase.storage
-          .from(activacionesBucket)
-          .remove([previousObjectPath])
+      if (previousStoredValue && previousStoredValue !== newStoredValue) {
+        let removePreviousError = null
+        try {
+          await fotoStorage.remove([previousStoredValue])
+        } catch (error) {
+          removePreviousError = error
+        }
         if (removePreviousError) {
           warning = 'La foto fue reemplazada, pero no se pudo eliminar el archivo anterior.'
           console.error('[admin-api] No se pudo eliminar una foto reemplazada.', sanitizeLogDetails(removePreviousError))
@@ -2333,7 +2451,7 @@ export function createAdminApiApp({ env = process.env, adminSupabase: injectedSu
 
       let activation
       try {
-        const signedRows = await attachActivationSignedPhotos(adminSupabase, activacionesBucket, [updatedRow])
+        const signedRows = await attachActivationSignedPhotos(fotoStorage, activacionesBucket, [updatedRow])
         activation = signedRows[0]
       } catch (signedUrlError) {
         activation = {
@@ -2629,6 +2747,16 @@ export function createAdminApiApp({ env = process.env, adminSupabase: injectedSu
         return
       }
 
+      let r2Usage = null
+      let r2UsageUnavailableReason = r2 ? null : 'R2 no esta configurado.'
+      if (r2) {
+        try {
+          r2Usage = await r2.usage()
+        } catch (error) {
+          r2UsageUnavailableReason = error instanceof Error ? error.message : 'No se pudo calcular uso de R2.'
+        }
+      }
+
       let databaseSizeBytes = null
       let databaseSizeUnavailableReason = null
 
@@ -2696,9 +2824,9 @@ export function createAdminApiApp({ env = process.env, adminSupabase: injectedSu
       const combinedCapacityEstimation = estimateCombinedActivationCapacity({
         activacionesCount: activacionesCount ?? 0,
         activacionesWithPhotoCount: activacionesWithPhotoCount ?? 0,
-        storageObjectsCount: bucketUsage.totalObjects,
-        storageUsedBytes: bucketUsage.totalBytes,
-        storageRemainingBytes,
+        storageObjectsCount: bucketUsage.totalObjects + (r2Usage?.totalObjects ?? 0),
+        storageUsedBytes: bucketUsage.totalBytes + (r2Usage?.totalBytes ?? 0),
+        storageRemainingBytes: r2Usage ? Math.max(0, R2_FREE_PLAN_STORAGE_BYTES - r2Usage.totalBytes) : storageRemainingBytes,
         databaseRemainingBytes,
         perActivationDatabaseBytes,
       })
@@ -2733,6 +2861,14 @@ export function createAdminApiApp({ env = process.env, adminSupabase: injectedSu
             estimatedDatabase == null ? estimationUnavailableReason : null,
           combined_capacity_estimation: combinedCapacityEstimation,
           plan_reference: SUPABASE_FREE_PLAN_REFERENCE,
+          r2_bucket: r2?.bucket ?? null,
+          r2_used_bytes: r2Usage?.totalBytes ?? null,
+          r2_objects_count: r2Usage?.totalObjects ?? null,
+          r2_limit_bytes: R2_FREE_PLAN_STORAGE_BYTES,
+          r2_usage_percent: r2Usage ? Number(((r2Usage.totalBytes / R2_FREE_PLAN_STORAGE_BYTES) * 100).toFixed(2)) : null,
+          r2_unavailable_reason: r2UsageUnavailableReason,
+          r2_uploads_enabled: r2UploadsEnabled,
+          archive_retention_days: archiveRetentionDays,
         },
       })
     })
@@ -2764,10 +2900,10 @@ export function createAdminApiApp({ env = process.env, adminSupabase: injectedSu
         return
       }
 
+      const storedPhotoValues = [existingRow.foto_url, existingRow.foto_cash_in]
+        .filter((value) => resolveStorageObjectPathFromFotoUrl(value, activacionesBucket))
       const storageObjectPaths = [...new Set(
-        [existingRow.foto_url, existingRow.foto_cash_in]
-          .map((value) => resolveStorageObjectPathFromFotoUrl(value, activacionesBucket))
-          .filter(Boolean)
+        storedPhotoValues.map((value) => resolveStorageObjectPathFromFotoUrl(value, activacionesBucket))
       )]
 
       const { data: deletedRows, error: deleteActivationErr } = await adminSupabase
@@ -2798,11 +2934,9 @@ export function createAdminApiApp({ env = process.env, adminSupabase: injectedSu
       }
 
       if (storageObjectPaths.length) {
-        const { error: removePhotoErr } = await adminSupabase.storage
-          .from(activacionesBucket)
-          .remove(storageObjectPaths)
-
-        if (removePhotoErr) {
+        try {
+          await fotoStorage.remove(storedPhotoValues)
+        } catch (removePhotoErr) {
           photoDelete.ok = false
           photoDelete.message = removePhotoErr.message
         }

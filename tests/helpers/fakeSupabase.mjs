@@ -122,6 +122,10 @@ class Query {
     this.inserted = row
     return this
   }
+  update(values) {
+    this.updated = values
+    return this
+  }
 
   run() {
     this.db.calls.from.push(this.table)
@@ -131,6 +135,9 @@ class Query {
       return { data: created, error: null }
     }
     let rows = (this.db.tables[this.table] ?? []).filter((row) => this.predicates.every((predicate) => predicate(row)))
+    if (this.updated) {
+      for (const row of rows) Object.assign(row, this.updated)
+    }
     const count = rows.length
     for (const { column, ascending } of [...this.orders].reverse()) {
       rows = [...rows].sort((a, b) => comparar(a[column], b[column]) * (ascending ? 1 : -1))
@@ -163,12 +170,19 @@ class Query {
   }
 }
 
-export function createFakeSupabase({ tables = {}, tokens = {} } = {}) {
-  const db = { tables, calls: { from: [], or: [], sign: [], range: [] } }
+export function createFakeSupabase({ tables = {}, tokens = {}, objects = new Map(), rpc = {} } = {}) {
+  const db = { tables, calls: { from: [], or: [], sign: [], range: [], rpc: [], remove: [] } }
   return {
     calls: db.calls,
     tables,
+    objects,
     from: (table) => new Query(db, table),
+    async rpc(name, params) {
+      db.calls.rpc.push({ name, params })
+      const handler = rpc[name]
+      if (!handler) return { data: null, error: { message: `fakeSupabase: rpc ${name} no definida` } }
+      return { data: await handler(params), error: null }
+    },
     auth: {
       async getClaims(token) {
         const user = tokens[token]
@@ -180,6 +194,19 @@ export function createFakeSupabase({ tables = {}, tokens = {} } = {}) {
         async createSignedUrls(paths, ttl) {
           db.calls.sign.push({ bucket, paths, ttl })
           return { data: paths.map((path) => ({ path, signedUrl: `https://signed.test/${bucket}/${path}?ttl=${ttl}` })), error: null }
+        },
+        async upload(path, body) {
+          objects.set(path, Buffer.from(body))
+          return { data: { path }, error: null }
+        },
+        async download(path) {
+          const bytes = objects.get(path)
+          return bytes ? { data: new Blob([bytes]), error: null } : { data: null, error: { message: 'Object not found' } }
+        },
+        async remove(paths) {
+          db.calls.remove.push({ bucket, paths })
+          for (const path of paths) objects.delete(path)
+          return { data: paths, error: null }
         },
       }),
     },

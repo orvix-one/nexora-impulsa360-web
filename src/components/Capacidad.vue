@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { apiRequest } from '../lib/api'
 import { useAuth } from '../lib/authStore'
 import { notifyError } from '../lib/feedback'
+import InfoTip from './InfoTip.vue'
 
 const { isAdmin } = useAuth()
 const accessError = ref(null)
@@ -20,6 +21,10 @@ const databaseEstimate = computed(() => summary.value?.database_estimation ?? nu
 const combinedCapacityEstimate = computed(() => summary.value?.combined_capacity_estimation ?? null)
 
 const storageUsageLabel = computed(() => formatPercent(summary.value?.storage_usage_percent))
+const hasR2Usage = computed(() => Number.isFinite(Number(summary.value?.r2_used_bytes ?? NaN)))
+const r2RemainingLabel = computed(() => (hasR2Usage.value
+  ? formatBytes(Math.max(0, summary.value.r2_limit_bytes - summary.value.r2_used_bytes))
+  : 'N/D'))
 const databaseUsageLabel = computed(() => formatPercent(summary.value?.database_usage_percent))
 
 const databaseUsedLabel = computed(() => {
@@ -105,7 +110,7 @@ const averagePhotoCoverageLabel = computed(() => {
 const limitingFactorLabel = computed(() => {
   const limitingFactor = combinedCapacityEstimate.value?.limiting_factor
   if (limitingFactor === 'storage') {
-    return 'Limite actual: Storage'
+    return hasR2Usage.value ? 'Limite actual: archivo de fotos (Cloudflare)' : 'Limite actual: fotos en Supabase'
   }
 
   if (limitingFactor === 'database') {
@@ -121,7 +126,7 @@ const combinedEstimateHint = computed(() => {
     return reason
   }
 
-  return `Estimacion combinada basada en un promedio de 1 foto por activacion y ${averagePhotoBytesLabel.value} por foto.`
+  return `Calculado con ${averagePhotoBytesLabel.value} de fotos por activacion.`
 })
 
 const estimateHint = computed(() => {
@@ -235,7 +240,7 @@ onMounted(() => {
       <p class="view-kicker">Capacidad y Consumo</p>
       <h1 class="view-title">Espacio del Proyecto</h1>
       <p class="view-description">
-        Controla de forma clara el uso de Storage y base de datos, con medicion real o estimada.
+        El sistema usa dos servicios: Supabase guarda los datos y recibe las fotos, y Cloudflare guarda el archivo de fotos.
       </p>
       <div class="meta-row">
         <span class="meta-pill" :class="{ 'meta-pill-ok': isAdmin }">Sesion administrativa</span>
@@ -257,75 +262,208 @@ onMounted(() => {
       </div>
     </div>
 
-    <div v-if="hasSummary" class="panel-card">
-      <div class="capacity-grid">
-        <div class="capacity-card">
-          <p class="capacity-label">Storage usado</p>
-          <p class="capacity-value">{{ formatBytes(summary.storage_used_bytes) }}</p>
-          <span class="capacity-source-badge">Medido</span>
-          <div class="capacity-progress" :class="`capacity-progress-${usageStatus(summary.storage_usage_percent)}`">
-            <span :style="{ width: usageWidth(summary.storage_usage_percent) }"></span>
+    <template v-if="hasSummary">
+      <section class="panel-card capacity-provider capacity-provider-supabase">
+        <header class="capacity-provider-header">
+          <span class="capacity-provider-mark">Supabase</span>
+          <div>
+            <h2 class="capacity-provider-title">
+              Base de datos y bandeja de fotos
+              <InfoTip text="Supabase es el servicio donde viven las activaciones, los usuarios y el inicio de sesion. Tambien recibe las fotos nuevas antes de archivarlas. Usamos su plan gratuito." />
+            </h2>
+            <p class="capacity-detail">Plan gratuito · si un limite se llena, la app deja de funcionar con normalidad.</p>
           </div>
-          <p class="capacity-detail">{{ storageUsageLabel }} · {{ summary.storage_objects_count }} archivos</p>
-        </div>
+        </header>
 
-        <div class="capacity-card">
-          <p class="capacity-label">Storage disponible</p>
-          <p class="capacity-value">{{ formatBytes(summary.storage_remaining_bytes) }}</p>
-          <p class="capacity-detail">de {{ formatBytes(summary.storage_limit_bytes) }}</p>
-        </div>
-
-        <div class="capacity-card">
-          <p class="capacity-label">Tamano promedio de foto</p>
-          <p class="capacity-value">{{ averagePhotoBytesLabel }}</p>
-          <p class="capacity-detail">Muestra: {{ averagePhotoSampleLabel }} fotos</p>
-          <p class="capacity-detail">{{ averagePhotoCoverageLabel }}</p>
-        </div>
-
-        <div class="capacity-card">
-          <p class="capacity-label">Base de datos usada</p>
-          <p class="capacity-value">{{ databaseUsedLabel }}</p>
-          <span class="capacity-source-badge" :class="{ 'capacity-source-estimated': !hasDatabaseExact }">{{ hasDatabaseExact ? 'Medido' : 'Estimado' }}</span>
-          <div class="capacity-progress" :class="`capacity-progress-${usageStatus(summary.database_usage_percent)}`">
-            <span :style="{ width: usageWidth(summary.database_usage_percent) }"></span>
+        <div class="capacity-grid">
+          <div class="capacity-card">
+            <p class="capacity-label">
+              Base de datos usada
+              <InfoTip text="Espacio que ocupan los registros: activaciones, usuarios, equipos e historial. No incluye fotos." />
+            </p>
+            <p class="capacity-value">{{ databaseUsedLabel }}</p>
+            <span class="capacity-source-badge" :class="{ 'capacity-source-estimated': !hasDatabaseExact }">
+              {{ hasDatabaseExact ? 'Medido' : 'Estimado' }}
+            </span>
+            <div class="capacity-progress" :class="`capacity-progress-${usageStatus(summary.database_usage_percent)}`">
+              <span :style="{ width: usageWidth(summary.database_usage_percent) }"></span>
+            </div>
+            <p class="capacity-detail">{{ databaseUsageLabel }} del limite</p>
           </div>
-          <p class="capacity-detail">{{ databaseUsageLabel }} del limite</p>
+
+          <div class="capacity-card">
+            <p class="capacity-label">Base de datos disponible</p>
+            <p class="capacity-value">{{ databaseRemainingLabel }}</p>
+            <p class="capacity-detail">de {{ formatBytes(summary.database_limit_bytes) }}</p>
+          </div>
+
+          <div class="capacity-card">
+            <p class="capacity-label">
+              Peso por activacion
+              <InfoTip text="Espacio promedio que ocupa el registro de una activacion en la base de datos, sin contar fotos. Incluye un margen de seguridad." />
+            </p>
+            <p class="capacity-value">{{ perActivationEstimatedLabel }}</p>
+            <p class="capacity-detail">Solo datos, sin fotos.</p>
+          </div>
+
+          <div class="capacity-card">
+            <p class="capacity-label">Activaciones que aun caben</p>
+            <p class="capacity-value">{{ remainingActivacionesEstimatedLabel }}</p>
+            <p class="capacity-detail">Antes de llenar la base de datos.</p>
+          </div>
+
+          <div class="capacity-card">
+            <p class="capacity-label">
+              Bandeja de fotos
+              <InfoTip
+:text="summary.r2_bucket
+                ? `Las fotos llegan aqui primero desde la app. Cada noche, las que tienen mas de ${summary.archive_retention_days} dias se mueven al archivo de Cloudflare, asi que este espacio debe mantenerse casi vacio. Si sube mucho, revisar el archivado nocturno.`
+                : 'Espacio de Supabase donde se guardan las fotos de las activaciones.'" />
+            </p>
+            <p class="capacity-value">{{ formatBytes(summary.storage_used_bytes) }}</p>
+            <span class="capacity-source-badge">Medido</span>
+            <div class="capacity-progress" :class="`capacity-progress-${usageStatus(summary.storage_usage_percent)}`">
+              <span :style="{ width: usageWidth(summary.storage_usage_percent) }"></span>
+            </div>
+            <p class="capacity-detail">{{ storageUsageLabel }} · {{ formatNumber(summary.storage_objects_count) }} archivos</p>
+          </div>
+
+          <div class="capacity-card">
+            <p class="capacity-label">Bandeja disponible</p>
+            <p class="capacity-value">{{ formatBytes(summary.storage_remaining_bytes) }}</p>
+            <p class="capacity-detail">de {{ formatBytes(summary.storage_limit_bytes) }}</p>
+          </div>
         </div>
 
-        <div class="capacity-card">
-          <p class="capacity-label">Base de datos disponible</p>
-          <p class="capacity-value">{{ databaseRemainingLabel }}</p>
-          <p class="capacity-detail">de {{ formatBytes(summary.database_limit_bytes) }}</p>
+        <div v-if="summary.plan_reference" class="capacity-chips">
+          <span class="capacity-chip">{{ summary.plan_reference.name }}</span>
+          <span class="capacity-chip">
+            {{ formatNumber(summary.plan_reference.monthly_active_users_limit) }} usuarios/mes
+            <InfoTip text="Cantidad de personas distintas que pueden iniciar sesion en un mes sin costo." />
+          </span>
+          <span class="capacity-chip">Base de datos {{ formatBytes(summary.plan_reference.database_limit_bytes) }}</span>
+          <span class="capacity-chip">Bandeja {{ formatBytes(summary.plan_reference.file_storage_limit_bytes) }}</span>
+          <span class="capacity-chip">
+            Descargas {{ formatBytes(summary.plan_reference.egress_limit_bytes) }}/mes
+            <InfoTip text="Datos que salen de Supabase cada mes: ver fotos, descargar reportes, sincronizar la app. Tambien cuenta el traslado nocturno de fotos a Cloudflare." />
+          </span>
         </div>
+      </section>
 
-        <div class="capacity-card">
-          <p class="capacity-label">Peso estimado por activacion</p>
-          <p class="capacity-value">{{ perActivationEstimatedLabel }}</p>
-          <p class="capacity-detail">Incluye factor de seguridad para estimacion.</p>
+      <section class="panel-card capacity-provider capacity-provider-cloudflare">
+        <header class="capacity-provider-header">
+          <span class="capacity-provider-mark">Cloudflare</span>
+          <div>
+            <h2 class="capacity-provider-title">
+              Archivo de fotos (R2)
+              <InfoTip text="Cloudflare R2 guarda todas las fotos de las activaciones de forma permanente. Los primeros 10 GB son gratis y ver o descargar fotos no tiene costo." />
+            </h2>
+            <p class="capacity-detail">10 GB gratis · despues aprox. USD 0,015 por GB al mes.</p>
+          </div>
+        </header>
+
+        <div class="capacity-grid">
+          <div class="capacity-card">
+            <p class="capacity-label">Fotos archivadas</p>
+            <p class="capacity-value">{{ hasR2Usage ? formatBytes(summary.r2_used_bytes) : 'N/D' }}</p>
+            <template v-if="hasR2Usage">
+              <span class="capacity-source-badge">Medido</span>
+              <div class="capacity-progress" :class="`capacity-progress-${usageStatus(summary.r2_usage_percent)}`">
+                <span :style="{ width: usageWidth(summary.r2_usage_percent) }"></span>
+              </div>
+              <p class="capacity-detail">{{ formatPercent(summary.r2_usage_percent) }} · {{ formatNumber(summary.r2_objects_count) }} archivos</p>
+            </template>
+            <p v-else class="capacity-detail">{{ summary.r2_unavailable_reason || 'Sin datos de Cloudflare.' }}</p>
+          </div>
+
+          <div class="capacity-card">
+            <p class="capacity-label">
+              Espacio gratis disponible
+              <InfoTip text="Si se supera, Cloudflare no bloquea nada: solo empieza a cobrar el excedente, centavos de dolar por mes." />
+            </p>
+            <p class="capacity-value">{{ r2RemainingLabel }}</p>
+            <p class="capacity-detail">de {{ formatBytes(summary.r2_limit_bytes) }}</p>
+          </div>
+
+          <div class="capacity-card">
+            <p class="capacity-label">
+              Subida directa desde la app
+              <InfoTip text="Activa: la app actualizada envia las fotos directo a Cloudflare. Inactiva: todas las fotos pasan primero por la bandeja de Supabase." />
+            </p>
+            <p class="capacity-value">{{ summary.r2_uploads_enabled ? 'Activa' : 'Inactiva' }}</p>
+            <p class="capacity-detail">Versiones antiguas de la app siempre usan la bandeja.</p>
+          </div>
         </div>
+      </section>
 
-        <div class="capacity-card">
-          <p class="capacity-label">Activaciones restantes estimadas</p>
-          <p class="capacity-value">{{ remainingActivacionesEstimatedLabel }}</p>
-          <p class="capacity-detail">Antes de alcanzar el limite de base de datos.</p>
+      <section class="panel-card capacity-provider">
+        <header class="capacity-provider-header">
+          <div>
+            <h2 class="capacity-provider-title">Proyeccion</h2>
+            <p class="capacity-detail">Combina ambos servicios con el ritmo actual de activaciones.</p>
+          </div>
+        </header>
+
+        <div class="capacity-grid">
+          <div class="capacity-card">
+            <p class="capacity-label">
+              Fotos por activacion
+              <InfoTip text="Peso promedio de las fotos de una activacion (foto principal y comprobante), sumando ambos servicios." />
+            </p>
+            <p class="capacity-value">{{ averagePhotoBytesLabel }}</p>
+            <p class="capacity-detail">Muestra: {{ averagePhotoSampleLabel }} activaciones · {{ averagePhotoCoverageLabel }}</p>
+          </div>
+
+          <div class="capacity-card">
+            <p class="capacity-label">
+              Activaciones con foto que aun caben
+              <InfoTip text="Cuantas activaciones mas se pueden registrar antes de llenar el primer limite gratuito, sea la base de datos o el archivo de fotos." />
+            </p>
+            <p class="capacity-value">{{ remainingActivacionesWithPhotoLabel }}</p>
+            <p class="capacity-detail">{{ limitingFactorLabel }}</p>
+            <p class="capacity-detail">{{ combinedEstimateHint }}</p>
+          </div>
         </div>
-
-        <div class="capacity-card">
-          <p class="capacity-label">Activaciones restantes (con foto)</p>
-          <p class="capacity-value">{{ remainingActivacionesWithPhotoLabel }}</p>
-          <p class="capacity-detail">{{ limitingFactorLabel }}</p>
-          <p class="capacity-detail">{{ combinedEstimateHint }}</p>
-        </div>
-      </div>
-
-      <div v-if="summary.plan_reference" class="capacity-chips">
-        <span class="capacity-chip">{{ summary.plan_reference.name }}</span>
-        <span class="capacity-chip">API ilimitada</span>
-        <span class="capacity-chip">MAU {{ formatNumber(summary.plan_reference.monthly_active_users_limit) }}</span>
-        <span class="capacity-chip">DB {{ formatBytes(summary.plan_reference.database_limit_bytes) }}</span>
-        <span class="capacity-chip">Storage {{ formatBytes(summary.plan_reference.file_storage_limit_bytes) }}</span>
-        <span class="capacity-chip">Egress {{ formatBytes(summary.plan_reference.egress_limit_bytes) }}</span>
-      </div>
-    </div>
+      </section>
+    </template>
   </section>
 </template>
+
+<style scoped>
+.capacity-provider {
+  display: grid;
+  gap: 0.75rem;
+  border-left: 4px solid var(--provider-color, var(--ru-border));
+}
+
+.capacity-provider-supabase { --provider-color: #3ecf8e; }
+.capacity-provider-cloudflare { --provider-color: #f38020; }
+
+.capacity-provider-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.capacity-provider-mark {
+  border-radius: 8px;
+  padding: 0.3rem 0.6rem;
+  background: var(--provider-color);
+  color: #0d1b2a;
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.capacity-provider-title {
+  margin: 0;
+  color: var(--ru-ink);
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.capacity-provider + .capacity-provider {
+  margin-top: 0.85rem;
+}
+</style>

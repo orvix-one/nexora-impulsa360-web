@@ -1,5 +1,10 @@
 const normalizeText = (value) => (typeof value === 'string' ? value.trim() : '')
 
+// Stored photo values with this prefix live in Cloudflare R2 under the same object path; anything else is Supabase Storage.
+export const R2_STORED_PREFIX = 'r2:'
+
+export const toR2StoredValue = (objectPath) => `${R2_STORED_PREFIX}${objectPath}`
+
 function decodeURIComponentSafe(value) {
   try {
     return decodeURIComponent(value)
@@ -8,7 +13,7 @@ function decodeURIComponentSafe(value) {
   }
 }
 
-export function resolveStorageObjectPathFromFotoUrl(fotoUrl, bucketName) {
+function resolveSupabaseObjectPath(fotoUrl, bucketName) {
   const normalized = normalizeText(fotoUrl)
   if (!normalized) {
     return null
@@ -68,4 +73,18 @@ export function resolveStorageObjectPathFromFotoUrl(fotoUrl, bucketName) {
   }
 
   return decodeURIComponentSafe(path).replace(/^\/+/, '')
+}
+
+export function resolveStorageLocation(fotoUrl, bucketName) {
+  const normalized = normalizeText(fotoUrl)
+  if (normalized.startsWith(R2_STORED_PREFIX)) {
+    const objectPath = normalized.slice(R2_STORED_PREFIX.length).replace(/^\/+/, '')
+    return objectPath ? { provider: 'r2', objectPath } : null
+  }
+  const objectPath = resolveSupabaseObjectPath(normalized, bucketName)
+  return objectPath ? { provider: 'supabase', objectPath } : null
+}
+
+export function resolveStorageObjectPathFromFotoUrl(fotoUrl, bucketName) {
+  return resolveStorageLocation(fotoUrl, bucketName)?.objectPath ?? null
 }
