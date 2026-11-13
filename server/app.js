@@ -5,9 +5,10 @@ import { fetchActivaciones } from './activacionesExportacion.js'
 import { aplicarAlcanceLider, esUuid, resolverAlcanceLider } from './alcanceLider.js'
 import { resolveMovilUser, resolvePortalUser } from './portalAuth.js'
 import { resolveStorageLocation, resolveStorageObjectPathFromFotoUrl, toR2StoredValue } from './storagePaths.js'
-import { createR2Storage } from './r2.js'
+import { createR2BackupStorage, createR2Storage } from './r2.js'
 import { createFotoStorage } from './fotoStorage.js'
 import { archivarFotos } from './archivarFotos.js'
+import { abrirFuentePostgres, respaldarDb, RESPALDO_ESTADO_KEY } from './respaldoDb.js'
 import { aplicarFiltrosActivaciones, crearCatalogoCiudades, normalizarFiltros, resolverCiudadesFiltro } from './activacionesFiltros.js'
 import { SELECT_LISTADO_ACTIVACIONES, parsearPagina } from './activacionesListado.js'
 import { parsearAliasesPlaza } from '../src/lib/plazas.js'
@@ -735,7 +736,9 @@ export function createAdminApiApp({
   env = process.env,
   adminSupabase: injectedSupabase = null,
   r2: injectedR2,
+  r2Respaldos: injectedR2Respaldos,
   createUserSupabase: injectedCreateUserSupabase = null,
+  abrirFuenteRespaldo = () => abrirFuentePostgres(env.DB_URL),
   metricsPageSize = 1000,
 } = {}) {
   assertRequiredEnv(env)
@@ -760,6 +763,7 @@ export function createAdminApiApp({
     },
   })
   const r2 = injectedR2 === undefined ? createR2Storage(env) : injectedR2
+  const r2Respaldos = injectedR2Respaldos === undefined ? createR2BackupStorage(env) : injectedR2Respaldos
   const fotoStorage = createFotoStorage({ adminSupabase, bucketName: activacionesBucket, r2 })
   const r2UploadsEnabled = Boolean(r2) && normalizeText(env.R2_UPLOADS_ENABLED).toLowerCase() !== 'false'
   const configuredRetentionDays = Number.parseFloat(String(env.FOTOS_RETENCION_SUPABASE_DIAS ?? ''))
@@ -1268,13 +1272,28 @@ export function createAdminApiApp({
     res.json({ urls: Object.fromEntries(values.map((value) => [value, signed.get(value) ?? null])) })
   }))
 
-  app.get('/cron/archivar-fotos', asyncRoute(async (req, res) => {
+  function requireCronSecret(req, res, next) {
     const expected = normalizeText(env.CRON_SECRET)
     const provided = normalizeText(req.headers.authorization).replace(/^Bearer\s+/i, '')
     if (!expected || !provided || !timingSafeEqualText(provided, expected)) {
       jsonError(res, 401, 'No autorizado.')
       return
     }
+    next()
+  }
+
+  app.get('/cron/respaldo-db', requireCronSecret, asyncRoute(async (_req, res) => {
+    if (!r2Respaldos) {
+      jsonError(res, 503, 'R2 no esta configurado.')
+      return
+    }
+    const estado = await respaldarDb({ abrirFuente: abrirFuenteRespaldo, r2: r2Respaldos })
+    if (!estado.ok) console.error('[respaldo-db] fallido', estado.error)
+    else console.log('[respaldo-db]', JSON.stringify(estado))
+    res.status(estado.ok ? 200 : 500).json(estado)
+  }))
+
+  app.get('/cron/archivar-fotos', requireCronSecret, asyncRoute(async (req, res) => {
     if (!r2) {
       jsonError(res, 503, 'R2 no esta configurado.')
       return
@@ -2759,6 +2778,17 @@ export function createAdminApiApp({
         }
       }
 
+      let respaldo = null
+      let respaldosBytes = null
+      if (r2Respaldos) {
+        try {
+          respaldo = await r2Respaldos.getJson(RESPALDO_ESTADO_KEY)
+          respaldosBytes = (await r2Respaldos.usage()).totalBytes
+        } catch (error) {
+          respaldo = { ok: false, error: error instanceof Error ? error.message : 'No se pudo leer el estado del respaldo.' }
+        }
+      }
+
       let databaseSizeBytes = null
       let databaseSizeUnavailableReason = null
 
@@ -2828,7 +2858,7 @@ export function createAdminApiApp({
         activacionesWithPhotoCount: activacionesWithPhotoCount ?? 0,
         storageObjectsCount: bucketUsage.totalObjects + (r2Usage?.totalObjects ?? 0),
         storageUsedBytes: bucketUsage.totalBytes + (r2Usage?.totalBytes ?? 0),
-        storageRemainingBytes: r2Usage ? Math.max(0, R2_FREE_PLAN_STORAGE_BYTES - r2Usage.totalBytes) : storageRemainingBytes,
+        storageRemainingBytes: r2Usage ? Math.max(0, R2_FREE_PLAN_STORAGE_BYTES - r2Usage.totalBytes - (respaldosBytes ?? 0)) : storageRemainingBytes,
         databaseRemainingBytes,
         perActivationDatabaseBytes,
       })
@@ -2869,7 +2899,9 @@ export function createAdminApiApp({
           r2_limit_bytes: R2_FREE_PLAN_STORAGE_BYTES,
           r2_usage_percent: r2Usage ? Number(((r2Usage.totalBytes / R2_FREE_PLAN_STORAGE_BYTES) * 100).toFixed(2)) : null,
           r2_unavailable_reason: r2UsageUnavailableReason,
+          r2_backup_bytes: respaldosBytes,
           r2_uploads_enabled: r2UploadsEnabled,
+          respaldo,
           archive_retention_days: archiveRetentionDays,
         },
       })

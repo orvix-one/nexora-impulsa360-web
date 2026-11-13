@@ -24,7 +24,7 @@ supabase db push --db-url "$DEV_DB_URL"           # apply pending migrations
 supabase migration list --db-url "$DEV_DB_URL"    # local vs remote history
 ```
 
-Same commands with `$PROD_DB_URL` for prod. Connection strings live in `.env` (git-ignored); use the Session pooler URL.
+Same commands with `$DB_URL` for prod. Connection strings live in `.env` (git-ignored); use the Session pooler URL.
 
 ## Rules
 

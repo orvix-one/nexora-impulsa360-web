@@ -14,6 +14,10 @@ export function createFakeR2({ corruptHead = false } = {}) {
       objects.set(key, bytes)
       return { etag: md5(bytes) }
     },
+    async getJson(key) {
+      const bytes = objects.get(key)
+      return bytes ? JSON.parse(bytes.toString('utf8')) : null
+    },
     async head(key) {
       const bytes = objects.get(key)
       if (!bytes) return null

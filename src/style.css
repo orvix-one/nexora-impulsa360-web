@@ -1122,25 +1122,6 @@ button:disabled,
   font-size: 0.72rem;
 }
 
-.capacity-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.36rem;
-}
-
-.capacity-chip {
-  display: inline-flex;
-  align-items: center;
-  border-radius: 999px;
-  padding: 0.22rem 0.5rem;
-  border: 1px solid rgba(72, 111, 148, 0.22);
-  background: #ffffff;
-  color: #24496d;
-  font-size: 0.67rem;
-  font-weight: 600;
-  line-height: 1.1;
-}
-
 .acciones {
   display: flex;
   align-items: center;
@@ -1261,6 +1242,11 @@ button:disabled,
   color: #865c00;
 }
 
+.capacity-source-alert {
+  background: #fde4e4;
+  color: #a12626;
+}
+
 .notification-stat-sent {
   background: #e8f1ff;
   color: #245891;
@@ -1271,23 +1257,6 @@ button:disabled,
   color: #17623c;
 }
 
-.capacity-progress {
-  height: 0.55rem;
-  overflow: hidden;
-  border-radius: 999px;
-  background: #dce6ef;
-}
-
-.capacity-progress span {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: #2a9d62;
-  transition: width 180ms ease;
-}
-
-.capacity-progress-warning span { background: #d99a16; }
-.capacity-progress-critical span { background: #cf3f45; }
 
 .notification-message-details {
   min-width: 12rem;

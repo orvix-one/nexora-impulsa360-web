@@ -20,7 +20,7 @@ const adminSupabase = createClient(process.env.SUPABASE_URL, process.env.SUPABAS
   auth: { autoRefreshToken: false, persistSession: false },
 })
 const r2 = createR2Storage(process.env)
-if (!r2) throw new Error('R2 is not configured (R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET)')
+if (!r2) throw new Error('R2 is not configured (R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY)')
 
 const antesDe = new Date(Date.now() - dias * 24 * 60 * 60 * 1000)
 console.log(`${dryRun ? '[dry-run] ' : ''}archiving photos created before ${antesDe.toISOString()} to R2 bucket ${r2.bucket}`)

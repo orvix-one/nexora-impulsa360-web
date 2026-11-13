@@ -15,10 +15,16 @@ export function resolveR2AccountId(rawValue) {
   return String(rawValue ?? '').match(/[0-9a-f]{32}/i)?.[0]?.toLowerCase() ?? null
 }
 
-export function createR2Storage(env) {
+export const R2_FOTOS_BUCKET = 'impulsa360-fotos'
+export const R2_RESPALDOS_BUCKET = 'impulsa360-respaldos'
+
+export function createR2BackupStorage(env) {
+  return createR2Storage(env, R2_RESPALDOS_BUCKET)
+}
+
+export function createR2Storage(env, bucket = R2_FOTOS_BUCKET) {
   const accountId = resolveR2AccountId(env.R2_ACCOUNT_ID)
-  const bucket = String(env.R2_BUCKET ?? '').trim()
-  if (!accountId || !bucket || !env.R2_ACCESS_KEY_ID || !env.R2_SECRET_ACCESS_KEY) return null
+  if (!accountId || !env.R2_ACCESS_KEY_ID || !env.R2_SECRET_ACCESS_KEY) return null
 
   const client = new S3Client({
     region: 'auto',
@@ -46,6 +52,16 @@ export function createR2Storage(env) {
       const result = await client.send(new PutObjectCommand({ Bucket: bucket, Key: key, Body: body, ContentType: contentType }))
       usageCache = null
       return { etag: String(result.ETag ?? '').replaceAll('"', '') }
+    },
+
+    async getJson(key) {
+      try {
+        const result = await client.send(new GetObjectCommand({ Bucket: bucket, Key: key }))
+        return JSON.parse(await result.Body.transformToString())
+      } catch (error) {
+        if (error?.$metadata?.httpStatusCode === 404) return null
+        throw error
+      }
     },
 
     async head(key) {
