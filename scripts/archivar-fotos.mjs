@@ -1,5 +1,4 @@
-// Backfill/manual run of the Supabase -> R2 photo archive (same logic as the daily /cron/archivar-fotos job).
-// Usage: node scripts/archivar-fotos.mjs [--dias 2] [--limit N] [--dry-run]
+// Manual run of the nightly Supabase -> R2 photo archive. Flags: --dias N, --limit N, --concurrencia N, --dry-run.
 import 'dotenv/config'
 import { createClient } from '@supabase/supabase-js'
 import { archivarFotos } from '../server/archivarFotos.js'
@@ -13,8 +12,9 @@ const option = (name, fallback) => {
 const dryRun = args.includes('--dry-run')
 const dias = option('--dias', 2)
 const limit = option('--limit', Infinity)
+const concurrencia = option('--concurrencia', 6)
 const bucketName = process.env.ADMIN_STORAGE_BUCKET_ACTIVACIONES || 'fotos-activaciones'
-const PAGE_SIZE = 100
+const PAGE_SIZE = 200
 
 const adminSupabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {
   auth: { autoRefreshToken: false, persistSession: false },
@@ -34,6 +34,7 @@ while (processed < limit) {
     bucketName,
     antesDe,
     limite: dryRun ? Math.min(limit, 100000) : Math.min(PAGE_SIZE, limit - processed),
+    concurrencia,
     dryRun,
     onItem: ({ candidato, estado, motivo }) => {
       processed += 1

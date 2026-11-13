@@ -234,3 +234,45 @@ test('archivarFotos dry run only reports sizes', async () => {
   assert.equal(tables.activaciones[0].foto_url, ownPath)
   assert.equal(r2.objects.size, 0)
 })
+
+function manyPhotosFixture(count) {
+  const bytes = Buffer.from('jpeg-bytes')
+  const ids = Array.from({ length: count }, (_, i) => `bbbbbbbb-0000-4000-8000-${String(i).padStart(12, '0')}`)
+  const paths = ids.map((id) => `activaciones/${AUTH_ACTIVADOR}/${id}/principal.jpg`)
+  const tables = { activaciones: ids.map((id, i) => ({ id, foto_url: paths[i], foto_cash_in: null })) }
+  const candidatos = ids.map((id, i) => ({ name: paths[i], size: bytes.length, activacion_id: id, campo: 'foto_url' }))
+  const supabase = createFakeSupabase({
+    tables,
+    objects: new Map(paths.map((path) => [path, bytes])),
+    rpc: { listar_fotos_para_archivar: () => candidatos },
+  })
+  return { supabase, tables, r2: createFakeR2() }
+}
+
+test('archivarFotos never runs more uploads at once than its concurrency', async () => {
+  const { supabase, tables, r2 } = manyPhotosFixture(10)
+  const put = r2.put.bind(r2)
+  let enCurso = 0
+  let maximo = 0
+  r2.put = async (...args) => {
+    enCurso += 1
+    maximo = Math.max(maximo, enCurso)
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    enCurso -= 1
+    return put(...args)
+  }
+  const resumen = await archivarFotos({ adminSupabase: supabase, r2, bucketName: BUCKET, antesDe: new Date(), concurrencia: 3 })
+  assert.equal(resumen.movidas, 10)
+  assert.equal(maximo, 3)
+  assert.ok(tables.activaciones.every((row) => row.foto_url.startsWith('r2:')))
+})
+
+test('archivarFotos leaves candidates for the next run once the deadline passes', async () => {
+  const { supabase, r2 } = manyPhotosFixture(4)
+  const resumen = await archivarFotos({
+    adminSupabase: supabase, r2, bucketName: BUCKET, antesDe: new Date(), concurrencia: 2, deadline: Date.now() - 1,
+  })
+  assert.equal(resumen.movidas, 0)
+  assert.equal(resumen.pendientesPorTiempo, 4)
+  assert.equal(r2.objects.size, 0)
+})

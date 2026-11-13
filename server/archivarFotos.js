@@ -1,5 +1,4 @@
-// Moves referenced activation photos older than a cutoff from Supabase Storage to Cloudflare R2.
-// Per object: copy, verify (size + md5 ETag), compare-and-swap the activaciones column to `r2:<path>`, then delete from Supabase.
+// Supabase -> R2 photo archive: copy, verify size and md5, compare-and-swap the column to `r2:<path>`, then delete from Supabase.
 import crypto from 'node:crypto'
 import { toR2StoredValue } from './storagePaths.js'
 
@@ -47,6 +46,7 @@ export async function archivarFotos({
   bucketName,
   antesDe,
   limite = 200,
+  concurrencia = 1,
   deadline = Infinity,
   dryRun = false,
   onItem = () => {},
@@ -60,15 +60,16 @@ export async function archivarFotos({
   if (error) throw new Error(`candidatos: ${error.message}`)
 
   const resumen = { candidatos: candidatos?.length ?? 0, movidas: 0, omitidas: 0, fallidas: 0, bytes: 0, pendientesPorTiempo: 0 }
-  for (const candidato of candidatos ?? []) {
+  const pendientes = [...(candidatos ?? [])]
+  const procesar = async (candidato) => {
     if (Date.now() >= deadline) {
       resumen.pendientesPorTiempo += 1
-      continue
+      return
     }
     if (dryRun) {
       resumen.bytes += Number(candidato.size)
       onItem({ candidato, estado: 'dry-run' })
-      continue
+      return
     }
     try {
       const resultado = await archivarObjeto({ adminSupabase, r2, bucketName, candidato })
@@ -84,5 +85,9 @@ export async function archivarFotos({
       onItem({ candidato, estado: 'fallida', motivo: itemError.message })
     }
   }
+  const trabajador = async () => {
+    while (pendientes.length) await procesar(pendientes.shift())
+  }
+  await Promise.all(Array.from({ length: Math.max(1, concurrencia) }, trabajador))
   return resumen
 }

@@ -1,4 +1,4 @@
-// Cloudflare R2 (S3-compatible) access for activation photos. createR2Storage returns null when R2 is not configured.
+// Cloudflare R2 client for activation photos; createR2Storage returns null when R2 is not configured.
 import {
   DeleteObjectsCommand,
   GetObjectCommand,

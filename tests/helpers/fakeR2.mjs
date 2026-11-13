@@ -1,4 +1,3 @@
-// In-memory stand-in for server/r2.js.
 import crypto from 'node:crypto'
 
 export function createFakeR2({ corruptHead = false } = {}) {

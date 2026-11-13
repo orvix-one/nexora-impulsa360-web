@@ -115,9 +115,10 @@ const MOVIL_READ_URL_TTL_SECONDS = 60 * 60
 const MOVIL_READ_MAX_VALUES = 20
 const PHOTO_SIGNED_TTL_SECONDS = 60 * 60
 const ARCHIVE_DEFAULT_RETENTION_DAYS = 2
-const ARCHIVE_CRON_BUDGET_MS = 240 * 1000
-const ARCHIVE_CRON_MAX_OBJECTS = 2000
-const ARCHIVE_PAGE_SIZE = 100
+const ARCHIVE_CRON_BUDGET_MS = 270 * 1000
+const ARCHIVE_CRON_MAX_OBJECTS = 6000
+const ARCHIVE_PAGE_SIZE = 200
+const ARCHIVE_CONCURRENCY = 6
 
 export function buildEvidenceToken(secret, activacionId, tipo, objectPath) {
   return crypto.createHmac('sha256', String(secret))
@@ -1289,6 +1290,7 @@ export function createAdminApiApp({
         bucketName: activacionesBucket,
         antesDe,
         limite: ARCHIVE_PAGE_SIZE,
+        concurrencia: ARCHIVE_CONCURRENCY,
         deadline,
         onItem: ({ candidato, estado, motivo }) => {
           if (estado === 'fallida') console.error('[archivar-fotos] fallida', candidato.name, motivo)

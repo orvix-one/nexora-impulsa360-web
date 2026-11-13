@@ -1,4 +1,4 @@
-// Provider-aware access to activation photos: routes each stored value to Supabase Storage or Cloudflare R2.
+// Routes each stored photo value to Supabase Storage or Cloudflare R2.
 import { resolveStorageLocation, toR2StoredValue } from './storagePaths.js'
 
 const SUPABASE_SIGN_BATCH = 100
