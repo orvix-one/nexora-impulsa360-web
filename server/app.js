@@ -5,7 +5,7 @@ import { fetchActivaciones } from './activacionesExportacion.js'
 import { aplicarAlcanceLider, esUuid, resolverAlcanceLider } from './alcanceLider.js'
 import { resolveMovilUser, resolvePortalUser } from './portalAuth.js'
 import { resolveStorageLocation, resolveStorageObjectPathFromFotoUrl, toR2StoredValue } from './storagePaths.js'
-import { createR2BackupStorage, createR2Storage } from './r2.js'
+import { createR2BackupStorage, createR2Storage, R2_USO_KEY, registrarUsoR2 } from './r2.js'
 import { createFotoStorage } from './fotoStorage.js'
 import { archivarFotos } from './archivarFotos.js'
 import { abrirFuentePostgres, respaldarDb, RESPALDO_ESTADO_KEY } from './respaldoDb.js'
@@ -1290,7 +1290,15 @@ export function createAdminApiApp({
     const estado = await respaldarDb({ abrirFuente: abrirFuenteRespaldo, r2: r2Respaldos })
     if (!estado.ok) console.error('[respaldo-db] fallido', estado.error)
     else console.log('[respaldo-db]', JSON.stringify(estado))
-    res.status(estado.ok ? 200 : 500).json(estado)
+    let uso = null
+    if (r2) {
+      try {
+        uso = await registrarUsoR2({ fotos: r2, respaldos: r2Respaldos })
+      } catch (error) {
+        console.error('[respaldo-db] no se pudo medir uso de R2', error instanceof Error ? error.message : error)
+      }
+    }
+    res.status(estado.ok ? 200 : 500).json({ ...estado, uso })
   }))
 
   app.get('/cron/archivar-fotos', requireCronSecret, asyncRoute(async (req, res) => {
@@ -2729,72 +2737,58 @@ export function createAdminApiApp({
   app.get(
     '/admin/storage/summary',
     asyncRoute(async (_req, res) => {
-      const { count: activacionesCount, error: activacionesCountErr } = await adminSupabase
-        .from('activaciones')
-        .select('id', { count: 'exact', head: true })
+      const leerJsonRespaldos = (key) => (r2Respaldos
+        ? r2Respaldos.getJson(key).then((data) => ({ data }), (error) => ({ error }))
+        : Promise.resolve({ data: null }))
+      const [
+        { count: activacionesCount, error: activacionesCountErr },
+        { count: activacionesWithPhotoCount, error: activacionesWithPhotoCountErr },
+        bucketUsageResult,
+        usoR2Result,
+        respaldoResult,
+        { data: databaseSizeData, error: databaseSizeErr },
+      ] = await Promise.all([
+        adminSupabase.from('activaciones').select('id', { count: 'exact', head: true }),
+        adminSupabase.from('activaciones').select('id', { count: 'exact', head: true }).not('foto_url', 'is', null).neq('foto_url', ''),
+        calculateBucketUsageBytes(adminSupabase, activacionesBucket).then((data) => ({ data }), (error) => ({ error })),
+        leerJsonRespaldos(R2_USO_KEY),
+        leerJsonRespaldos(RESPALDO_ESTADO_KEY),
+        adminSupabase.rpc('get_database_size_bytes'),
+      ])
 
       if (activacionesCountErr) {
         jsonError(res, 500, 'No se pudo obtener conteo de activaciones.', activacionesCountErr.message)
         return
       }
-
-      const { count: activacionesWithPhotoCount, error: activacionesWithPhotoCountErr } =
-        await adminSupabase
-          .from('activaciones')
-          .select('id', { count: 'exact', head: true })
-          .not('foto_url', 'is', null)
-          .neq('foto_url', '')
-
       if (activacionesWithPhotoCountErr) {
-        jsonError(
-          res,
-          500,
-          'No se pudo obtener conteo de activaciones con foto.',
-          activacionesWithPhotoCountErr.message
-        )
+        jsonError(res, 500, 'No se pudo obtener conteo de activaciones con foto.', activacionesWithPhotoCountErr.message)
         return
       }
-
-      let bucketUsage = null
-      try {
-        bucketUsage = await calculateBucketUsageBytes(adminSupabase, activacionesBucket)
-      } catch (error) {
+      if (bucketUsageResult.error) {
         jsonError(
           res,
           500,
           'No se pudo calcular uso del bucket de fotos.',
-          error instanceof Error ? error.message : undefined
+          bucketUsageResult.error instanceof Error ? bucketUsageResult.error.message : undefined
         )
         return
       }
+      const bucketUsage = bucketUsageResult.data
 
-      let r2Usage = null
-      let r2UsageUnavailableReason = r2 ? null : 'R2 no esta configurado.'
-      if (r2) {
-        try {
-          r2Usage = await r2.usage()
-        } catch (error) {
-          r2UsageUnavailableReason = error instanceof Error ? error.message : 'No se pudo calcular uso de R2.'
-        }
-      }
-
-      let respaldo = null
-      let respaldosBytes = null
-      if (r2Respaldos) {
-        try {
-          respaldo = await r2Respaldos.getJson(RESPALDO_ESTADO_KEY)
-          respaldosBytes = (await r2Respaldos.usage()).totalBytes
-        } catch (error) {
-          respaldo = { ok: false, error: error instanceof Error ? error.message : 'No se pudo leer el estado del respaldo.' }
-        }
-      }
+      const usoR2 = usoR2Result.data
+      const r2Usage = usoR2?.fotos ?? null
+      const respaldosBytes = usoR2?.respaldos?.totalBytes ?? null
+      const r2UsageUnavailableReason = !r2 || !r2Respaldos
+        ? 'R2 no esta configurado.'
+        : usoR2Result.error
+          ? (usoR2Result.error instanceof Error ? usoR2Result.error.message : 'No se pudo leer el uso de R2.')
+          : usoR2 ? null : 'El uso se mide cada madrugada; aun no hay medicion.'
+      const respaldo = respaldoResult.error
+        ? { ok: false, error: respaldoResult.error instanceof Error ? respaldoResult.error.message : 'No se pudo leer el estado del respaldo.' }
+        : respaldoResult.data
 
       let databaseSizeBytes = null
       let databaseSizeUnavailableReason = null
-
-      const { data: databaseSizeData, error: databaseSizeErr } = await adminSupabase.rpc(
-        'get_database_size_bytes'
-      )
 
       if (databaseSizeErr) {
         databaseSizeUnavailableReason = databaseSizeErr.message
@@ -2899,6 +2893,7 @@ export function createAdminApiApp({
           r2_limit_bytes: R2_FREE_PLAN_STORAGE_BYTES,
           r2_usage_percent: r2Usage ? Number(((r2Usage.totalBytes / R2_FREE_PLAN_STORAGE_BYTES) * 100).toFixed(2)) : null,
           r2_unavailable_reason: r2UsageUnavailableReason,
+          r2_measured_at: usoR2?.medido ?? null,
           r2_backup_bytes: respaldosBytes,
           r2_uploads_enabled: r2UploadsEnabled,
           respaldo,

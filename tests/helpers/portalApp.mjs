@@ -144,8 +144,8 @@ export const TEST_ENV = {
   EVIDENCE_LINK_SECRET: 'secreto-de-prueba',
 }
 
-export async function startPortal(tables = seedTables(), appOptions = {}) {
-  const supabase = createFakeSupabase({ tables, tokens: tokensFor() })
+export async function startPortal(tables = seedTables(), appOptions = {}, { rpc = {} } = {}) {
+  const supabase = createFakeSupabase({ tables, tokens: tokensFor(), rpc })
   const app = createAdminApiApp({ env: TEST_ENV, adminSupabase: supabase, ...appOptions })
   const server = await new Promise((resolve) => {
     const s = app.listen(0, '127.0.0.1', () => resolve(s))

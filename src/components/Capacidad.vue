@@ -225,6 +225,7 @@ onMounted(() => {
             <span class="capacity-legend-item capacity-legend-backups">Respaldos {{ formatBytes(summary.r2_backup_bytes) }}</span>
             <span class="capacity-legend-item">{{ formatFree(r2UsedBytes, summary.r2_limit_bytes) }}</span>
           </p>
+          <p v-if="summary.r2_measured_at" class="capacity-detail">Medido cada madrugada · ultima medicion {{ formatDateTime(new Date(summary.r2_measured_at)) }}</p>
           <p v-else class="capacity-detail">{{ summary.r2_unavailable_reason || 'Sin datos de Cloudflare.' }}</p>
         </div>
       </section>

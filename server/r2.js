@@ -18,6 +18,16 @@ export function resolveR2AccountId(rawValue) {
 export const R2_FOTOS_BUCKET = 'impulsa360-fotos'
 export const R2_RESPALDOS_BUCKET = 'impulsa360-respaldos'
 
+export const R2_USO_KEY = 'estado/uso.json'
+
+// Listing the photo bucket costs about a second per thousand objects, so usage is measured nightly and the portal reads this snapshot.
+export async function registrarUsoR2({ fotos, respaldos, now = new Date() }) {
+  const [usoFotos, usoRespaldos] = await Promise.all([fotos.usage(), respaldos.usage()])
+  const uso = { medido: now.toISOString(), fotos: usoFotos, respaldos: usoRespaldos }
+  await respaldos.put(R2_USO_KEY, Buffer.from(JSON.stringify(uso)), 'application/json')
+  return uso
+}
+
 export function createR2BackupStorage(env) {
   return createR2Storage(env, R2_RESPALDOS_BUCKET)
 }

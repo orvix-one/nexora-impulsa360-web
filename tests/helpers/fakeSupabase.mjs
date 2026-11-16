@@ -81,6 +81,19 @@ class Query {
     this.predicates.push((row) => row[column] === value)
     return this
   }
+  neq(column, value) {
+    this.predicates.push((row) => row[column] !== value)
+    return this
+  }
+  not(column, operator, value) {
+    if (operator !== 'is' || value !== null) throw new Error(`fakeSupabase: not(${operator}) no soportado`)
+    this.predicates.push((row) => row[column] != null)
+    return this
+  }
+  limit(count) {
+    this.window = [0, count - 1]
+    return this
+  }
   in(column, values) {
     this.predicates.push((row) => values.includes(row[column]))
     return this
@@ -177,11 +190,15 @@ export function createFakeSupabase({ tables = {}, tokens = {}, objects = new Map
     tables,
     objects,
     from: (table) => new Query(db, table),
-    async rpc(name, params) {
+    rpc(name, params) {
       db.calls.rpc.push({ name, params })
       const handler = rpc[name]
-      if (!handler) return { data: null, error: { message: `fakeSupabase: rpc ${name} no definida` } }
-      return { data: await handler(params), error: null }
+      const result = handler
+        ? Promise.resolve(handler(params)).then((data) => ({ data, error: null }))
+        : Promise.resolve({ data: null, error: { message: `fakeSupabase: rpc ${name} no definida` } })
+      return Object.assign(result, {
+        single: () => result.then(({ data, error }) => ({ data: Array.isArray(data) ? data[0] ?? null : data, error })),
+      })
     },
     auth: {
       async getClaims(token) {

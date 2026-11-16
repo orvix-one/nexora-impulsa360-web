@@ -6,6 +6,7 @@ import { respaldarDb, RESPALDO_ESTADO_KEY } from '../server/respaldoDb.js'
 import { createR2BackupStorage, createR2Storage } from '../server/r2.js'
 import { createFakeR2 } from './helpers/fakeR2.mjs'
 import { createFakeSupabase } from './helpers/fakeSupabase.mjs'
+import { seedTables, startPortal, TOKENS } from './helpers/portalApp.mjs'
 
 const NOW = new Date('2026-11-13T09:00:00Z')
 const ENV = {
@@ -128,5 +129,40 @@ test('GET /cron/respaldo-db answers 503 without a backups bucket', async () => {
     assert.equal((await portal.get('/cron/respaldo-db', ENV.CRON_SECRET)).status, 503)
   } finally {
     await portal.close()
+  }
+})
+
+test('the backup cron snapshots R2 usage and the summary reads it without listing buckets', async () => {
+  const fotos = createFakeR2()
+  const respaldos = createFakeR2()
+  await fotos.put('activaciones/a/b/principal.jpg', Buffer.from('foto'))
+  const portal = await startApp({ r2: fotos, r2Respaldos: respaldos, abrirFuenteRespaldo: async () => fakeFuente() })
+  try {
+    const cron = await (await portal.get('/cron/respaldo-db', ENV.CRON_SECRET)).json()
+    assert.deepEqual(cron.uso.fotos, { totalBytes: 4, totalObjects: 1 })
+  } finally {
+    await portal.close()
+  }
+
+  fotos.usage = () => { throw new Error('the summary must not list the photo bucket') }
+  respaldos.usage = () => { throw new Error('the summary must not list the backups bucket') }
+  const admin = await startPortal(seedTables(), { r2: fotos, r2Respaldos: respaldos }, {
+    rpc: {
+      get_storage_usage_bytes: () => [{ total_bytes: 10, total_objects: 1 }],
+      get_database_size_bytes: () => 1000,
+    },
+  })
+  try {
+    const response = await admin.get('/admin/storage/summary', TOKENS.admin)
+    assert.equal(response.status, 200)
+    const { summary } = await response.json()
+    assert.equal(summary.r2_used_bytes, 4)
+    assert.equal(summary.r2_objects_count, 1)
+    assert.ok(summary.r2_backup_bytes > 0)
+    assert.ok(summary.r2_measured_at)
+    assert.equal(summary.respaldo.ok, true)
+    assert.equal(summary.database_size_bytes, 1000)
+  } finally {
+    await admin.close()
   }
 })
