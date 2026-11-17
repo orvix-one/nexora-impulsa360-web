@@ -325,6 +325,20 @@ input[type='checkbox']:disabled {
   background: rgba(15, 169, 104, 0.17);
 }
 
+.panel-card .meta-pill,
+.detalle-activacion .meta-pill {
+  border-color: var(--ru-border);
+  background: var(--ru-white);
+  color: var(--ru-ink);
+}
+
+.panel-card .meta-pill-ok,
+.detalle-activacion .meta-pill-ok {
+  border-color: rgba(15, 169, 104, 0.5);
+  background: #e6f7ef;
+  color: #0f6a44;
+}
+
 .panel-card {
   display: grid;
   gap: 1rem;
@@ -2044,3 +2058,83 @@ button:disabled,
   opacity: 0.55;
   transition: opacity 0.15s ease;
 }
+
+.selector-buscable {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.selector-cabecera,
+.selector-elegida {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.selector-lista {
+  max-height: 260px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--ru-border);
+  border-radius: 12px;
+  background: var(--ru-white);
+}
+
+.selector-opcion {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  border: 0;
+  border-bottom: 1px solid var(--ru-border);
+  background: transparent;
+  color: var(--ru-ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.selector-opcion small,
+.selector-elegida small,
+.viaje-nota {
+  color: var(--ru-ink-soft);
+}
+
+.selector-opcion small {
+  margin-left: auto;
+}
+
+.viaje-nota {
+  display: block;
+}
+
+.viaje-fechas {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 0.75rem;
+}
+
+.viaje-en_curso {
+  background: #e6f7ef;
+  color: #0f6a44;
+}
+
+.viaje-programado {
+  background: #e7f0ff;
+  color: #0f4ecc;
+}
+
+.viaje-finalizado {
+  background: #eef2f6;
+  color: #4d6680;
+}
+
+.viaje-cancelado {
+  background: #fde8ea;
+  color: #a12731;
+}
+

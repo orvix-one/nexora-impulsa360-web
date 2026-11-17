@@ -30,10 +30,10 @@ export function proveerMetricas() {
   const cargando = ref(true)
   const error = ref(/** @type {string | null} */ (null))
   const datos = shallowRef(
-    /** @type {{ activaciones: import('./tipos.js').Activacion[], usuarios: import('./tipos.js').Usuario[], plazas: { nombre?: string }[] }} */ ({
+    /** @type {{ activaciones: import('./tipos.js').Activacion[], usuarios: import('./tipos.js').Usuario[], ciudadesPorPlaza: { ciudad: string, plaza: string }[] }} */ ({
       activaciones: [],
       usuarios: [],
-      plazas: [],
+      ciudadesPorPlaza: [],
     }),
   )
   const hoy = calendarioHoy()

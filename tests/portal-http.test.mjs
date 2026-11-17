@@ -85,21 +85,22 @@ test('GET /portal/users: el lider solo ve a su equipo', () =>
     )
   }))
 
-const asignacionTemporal = {
-  plaza_temporal: 'Unifranz',
-  tipo_zona: 'universidad',
-  motivo: 'Evento',
+const viaje = {
+  municipio_id: 5,
+  nota: 'Feria',
   inicio: '2026-10-30T13:00:00.000Z',
   fin: '2026-10-31T03:59:00.000Z',
 }
 
-test('POST temporary-plaza: acepta a un lider activo y rechaza a un usuario inactivo', () =>
+test('POST /admin/viajes: crea un viaje por activador activo y rechaza el lote si alguno esta inactivo', () =>
   conPortal(async ({ post, supabase }) => {
-    const ok = await post(`/admin/users/${IDS.lider}/temporary-plaza`, TOKENS.admin, asignacionTemporal)
+    const ok = await post('/admin/viajes', TOKENS.admin, { ...viaje, activador_ids: [IDS.lider, IDS.activador] })
     assert.equal(ok.status, 201)
-    assert.equal(supabase.tables.activador_plaza_temporal.length, 1)
+    assert.deepEqual(supabase.tables.viajes.map((v) => v.activador_id), [IDS.lider, IDS.activador])
+    assert.equal(supabase.tables.viajes[0].creado_por, IDS.admin)
 
-    const rechazado = await post(`/admin/users/${IDS.inactivo}/temporary-plaza`, TOKENS.admin, asignacionTemporal)
+    const rechazado = await post('/admin/viajes', TOKENS.admin, { ...viaje, activador_ids: [IDS.activador, IDS.inactivo] })
     assert.equal(rechazado.status, 400)
-    assert.equal(supabase.tables.activador_plaza_temporal.length, 1)
+    assert.equal(supabase.tables.viajes.length, 2)
   }))
+

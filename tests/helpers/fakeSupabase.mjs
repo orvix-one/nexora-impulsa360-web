@@ -102,6 +102,10 @@ class Query {
     this.predicates.push((row) => row[column] != null && row[column] >= value)
     return this
   }
+  gt(column, value) {
+    this.predicates.push((row) => row[column] != null && row[column] > value)
+    return this
+  }
   lte(column, value) {
     this.predicates.push((row) => row[column] != null && row[column] <= value)
     return this
@@ -143,9 +147,10 @@ class Query {
   run() {
     this.db.calls.from.push(this.table)
     if (this.inserted) {
-      const created = { id: `${this.table}-${(this.db.tables[this.table]?.length ?? 0) + 1}`, ...this.inserted }
-      this.db.tables[this.table] = [...(this.db.tables[this.table] ?? []), created]
-      return { data: created, error: null }
+      const nuevas = (Array.isArray(this.inserted) ? this.inserted : [this.inserted]).map((row, i) =>
+        ({ id: `${this.table}-${(this.db.tables[this.table]?.length ?? 0) + i + 1}`, ...row }))
+      this.db.tables[this.table] = [...(this.db.tables[this.table] ?? []), ...nuevas]
+      return { data: Array.isArray(this.inserted) ? nuevas : nuevas[0], error: null }
     }
     let rows = (this.db.tables[this.table] ?? []).filter((row) => this.predicates.every((predicate) => predicate(row)))
     if (this.updated) {

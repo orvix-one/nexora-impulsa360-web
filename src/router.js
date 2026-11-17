@@ -38,6 +38,11 @@ const routes = [
     meta: { admin: true },
   },
   {
+    path: '/viajes',
+    component: () => import('./pages/ViajesPage.vue'),
+    meta: { admin: true },
+  },
+  {
     path: '/notificaciones',
     component: () => import('./components/Notificaciones.vue'),
     meta: { admin: true },

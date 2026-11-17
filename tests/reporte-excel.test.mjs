@@ -18,7 +18,7 @@ async function leer(filas) {
 
 test('el Excel incluye las columnas internas de plaza, equipo, líder y GPS', () => {
   const headers = COLUMNAS_EXCEL.map(([header]) => header)
-  for (const header of ['Plaza Base', 'Plaza Efectiva', 'Equipo', 'Facturador', 'Líder Vigente', 'Latitud', 'Longitud', 'Usuario ID']) {
+  for (const header of ['Plaza Base', 'Equipo', 'Facturador', 'Líder Vigente', 'Latitud', 'Longitud', 'Usuario ID']) {
     assert.ok(headers.includes(header), `falta ${header}`)
   }
 })
@@ -28,13 +28,13 @@ test('fecha en hora de La Paz, enlaces a fotos solo si existen y equipo con núm
     created_at: '2026-10-31T03:30:00Z',
     foto_url_evidencia: '/evidencia/1/principal/abc',
     equipo_numero_registro: 4,
-    plaza_efectiva_registro: 'La Paz',
+    plaza_base_registro: 'La Paz',
   }])
   assert.equal(celda('Fecha de la Activación').value.toISOString(), '2026-10-30T23:30:00.000Z')
   assert.deepEqual(celda('Foto de la Activación').value, { text: 'Ver foto', hyperlink: 'https://portal.test/evidencia/1/principal/abc' })
   assert.ok(!celda('Foto Cash-In / Reporte').value)
   assert.equal(celda('Equipo').value, 'Equipo #4')
-  assert.equal(celda('Plaza Efectiva').value, 'La Paz')
+  assert.equal(celda('Plaza Base').value, 'La Paz')
 })
 
 test('el Excel neutraliza fórmulas en texto libre', async () => {

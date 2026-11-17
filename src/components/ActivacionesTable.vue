@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, onBeforeUnmount, onMounted, watch } from 'vue'
+import { computed, ref, onBeforeUnmount, watch } from 'vue'
 import { apiRequest, apiUrl } from '../lib/api'
 import { fetchActivacionDetalle, fetchActivacionesExportacion } from '../lib/activacionesService'
 import {
@@ -77,20 +77,6 @@ const formularioEdicion = ref({})
 const formularioEdicionInicial = ref({})
 const motivoEdicion = ref('')
 const { isAdmin } = useAuth()
-
-const opcionesOrg = ref({ available: false, plazas: [] })
-
-async function cargarOpcionesOrg() {
-  try {
-    const result = await apiRequest('/admin/organization-options')
-    opcionesOrg.value = result
-  } catch {
-    // no bloquear la edición si falla
-    opcionesOrg.value = { available: false, plazas: [] }
-  }
-}
-
-onMounted(() => { if (isAdmin.value) cargarOpcionesOrg() })
 
 function getCiudadActivacion(activacion) {
   return etiquetaCiudadActivacion(activacion)
@@ -199,8 +185,6 @@ function etiquetaCampo(key, row = {}) {
     telefono_cliente: 'Telefono del cliente', email_cliente: 'Correo del cliente',
     ciudad_activacion: 'Ciudad de activacion', zona_activacion: 'Distrito o zona',
     plaza_base_registro: 'Plaza organizacional (base)',
-    plaza_efectiva_registro: 'Plaza organizacional (efectiva)',
-    plaza_temporal_registro: 'Plaza organizacional (temporal)',
     tipo_activacion: 'Subtipo', tipo_comercio: 'Tipo de comercio',
     tamano_tienda: 'Tamano de tienda', foto_url: 'Fotografia', descargo_app: 'Descargo la app',
     cash_in: 'Cash-In', cash_out: 'Cash-Out', qr_fisico: 'QR fisico', p2p: 'P2P',
@@ -226,10 +210,10 @@ function formatearValor(value, key) {
 
 const seccionesDetalleConfig = [
   { title: 'Datos generales', keys: ['fecha_activacion', 'impulsador', 'ciudad_activacion', 'plaza', 'zona_activacion'] },
-  { title: 'Plaza organizacional', keys: ['plaza_base_registro', 'plaza_efectiva_registro', 'plaza_temporal_registro'] },
+  { title: 'Plaza organizacional', keys: ['plaza_base_registro'] },
   { title: 'Datos del cliente', keys: ['nombres_cliente', 'apellidos_cliente', 'ci_cliente', 'telefono_cliente', 'email_cliente'] },
   { title: 'Informacion de la activacion', keys: ['tipo_activacion', 'descargo_app', 'registro', 'cash_in', 'cash_out', 'p2p', 'qr_fisico', 'respaldo', 'creditos', 'remesas'] },
-  { title: 'Informacion del comercio o tienda', keys: ['nombre_comercio', 'comercio', 'cliente', 'tipo_comercio', 'tamano_tienda', 'tipo_tienda', 'rubro_comercio', 'rubro_comercio_otro', 'comercio_fuera_mercado', 'es_plaza_temporal', 'plaza_temporal'] },
+  { title: 'Informacion del comercio o tienda', keys: ['nombre_comercio', 'comercio', 'cliente', 'tipo_comercio', 'tamano_tienda', 'tipo_tienda', 'rubro_comercio', 'rubro_comercio_otro', 'comercio_fuera_mercado'] },
   { title: 'Evidencias y fotografias', keys: ['foto_url', 'foto_cash_in'] },
   { title: 'Ubicacion', keys: ['latitud', 'longitud', 'direccion', 'ubicacion'] },
   { title: 'Errores u observaciones', keys: ['hubo_error', 'tipo_error', 'descripcion_error', 'observaciones'] },
@@ -374,8 +358,6 @@ function iniciarEdicion() {
     qr_fisico: row.qr_fisico === true,
     respaldo: row.respaldo === true,
     hubo_error: row.hubo_error === true,
-    es_plaza_temporal: row.es_plaza_temporal === true,
-    plaza_temporal: row.plaza_temporal ?? '',
   }
   formularioEdicionInicial.value = { ...formularioEdicion.value }
   motivoEdicion.value = ''
@@ -485,7 +467,6 @@ function validarEdicion() {
   if (textLengthError) return textLengthError
   if (form.email_cliente && !isValidEmail(normalizeEmail(form.email_cliente))) return 'Ingresa un correo valido.'
   if (form.telefono_cliente && !/^\+?[0-9\s()-]{6,20}$/.test(form.telefono_cliente.trim())) return 'Ingresa un telefono valido.'
-  if (form.es_plaza_temporal && !form.plaza_temporal.trim()) return 'La plaza temporal es obligatoria.'
   if (form.hubo_error && !form.tipo_error) return 'Selecciona el tipo de error.'
   if (form.hubo_error && form.tipo_error === 'Otro' && !form.descripcion_error.trim()) return 'Describe el error.'
   return null
@@ -506,17 +487,10 @@ function construirCambiosEdicion() {
   setIfChanged('ci_cliente', form.ci_cliente)
   setIfChanged('telefono_cliente', form.telefono_cliente)
   setIfChanged('email_cliente', form.email_cliente)
-  setIfChanged(plazaEditableKey.value, form.plaza)
   setIfChanged('zona_activacion', form.zona_activacion)
   setIfChanged('observaciones', form.observaciones)
   setIfChanged('tipo_error', form.tipo_error)
   setIfChanged('descripcion_error', form.descripcion_error)
-  const plazaTemporal = form.es_plaza_temporal ? form.plaza_temporal : null
-  const initialPlazaTemporal = initial.es_plaza_temporal ? initial.plaza_temporal : null
-  if (form.es_plaza_temporal !== initial.es_plaza_temporal || plazaTemporal !== initialPlazaTemporal) {
-    changes.es_plaza_temporal = form.es_plaza_temporal
-    changes.plaza_temporal = plazaTemporal
-  }
   const classificationFields = [
     'tipo_activacion', 'tamano_tienda', 'tipo_tienda', 'tipo_comercio',
     'rubro_comercio', 'rubro_comercio_otro', 'comercio_fuera_mercado',
@@ -763,14 +737,7 @@ const exportarExcelYolopago = () => exportar('yolopago', async (ExcelJS, datos, 
               <label v-if="nombresVisible"><span class="field-label">Cédula de identidad</span><input v-model="formularioEdicion.ci_cliente" class="input-texto"></label>
               <label><span class="field-label">Telefono</span><input v-model="formularioEdicion.telefono_cliente" class="input-texto" inputmode="tel"></label>
               <label><span class="field-label">Correo</span><input v-model="formularioEdicion.email_cliente" type="email" class="input-texto"></label>
-              <label><span class="field-label">Ciudad de activación</span>
-                <template v-if="opcionesOrg.available">
-                  <select v-model="formularioEdicion.plaza" class="input-texto"><option value="">Selecciona ciudad</option><option v-for="p in opcionesOrg.plazas" :key="p.id" :value="p.nombre">{{ p.nombre }}</option></select>
-                </template>
-                <template v-else>
-                  <input v-model="formularioEdicion.plaza" class="input-texto">
-                </template>
-              </label>
+              <label><span class="field-label">Ciudad de activación (por GPS)</span><input :value="formularioEdicion.plaza" class="input-texto" disabled></label>
               <label><span class="field-label">Distrito o zona</span><select v-if="zonasDisponibles.length" v-model="formularioEdicion.zona_activacion" class="input-texto"><option value="">Selecciona zona</option><option v-if="formularioEdicion.zona_activacion && !zonasDisponibles.includes(formularioEdicion.zona_activacion)" :value="formularioEdicion.zona_activacion">Histórico: {{ formularioEdicion.zona_activacion }}</option><option v-for="zona in zonasDisponibles" :key="zona" :value="zona">{{ zona }}</option></select><input v-else v-model="formularioEdicion.zona_activacion" class="input-texto"></label>
               <label><span class="field-label">Categoría</span><select :value="formularioEdicion.tipo_grupo" class="input-texto" @change="cambiarCategoria"><option value="">Selecciona categoría</option><option v-for="categoria in ACTIVATION_CATEGORIES" :key="categoria.key" :value="categoria.key">{{ categoria.label }}</option></select></label>
               <label><span class="field-label">Subtipo</span><select :value="formularioEdicion.tipo_activacion" class="input-texto" :disabled="!formularioEdicion.tipo_grupo" @change="cambiarTipoActivacion"><option value="">Selecciona subtipo</option><option v-if="formularioEdicion.tipo_activacion && !tiposActivacionDisponibles.some((item) => item.key === formularioEdicion.tipo_activacion)" :value="formularioEdicion.tipo_activacion">Histórico: {{ formularioEdicion.tipo_activacion }}</option><option v-for="tipo in tiposActivacionDisponibles" :key="tipo.key" :value="tipo.key">{{ tipo.label }}</option></select></label>
@@ -790,8 +757,6 @@ const exportarExcelYolopago = () => exportar('yolopago', async (ExcelJS, datos, 
               <label v-if="formularioEdicion.hubo_error && formularioEdicion.tipo_error === 'Otro'" class="edicion-field-wide"><span class="field-label">Descripcion del error</span><textarea v-model="formularioEdicion.descripcion_error" class="input-texto" rows="3"></textarea></label>
               <label v-if="isAdmin"><span class="field-label">Evidencia principal</span><input ref="inputFotoPrincipal" type="file" accept="image/jpeg,image/png,image/webp" class="input-texto" @change="seleccionarFoto('principal', $event)"><button type="button" class="boton boton-editar" :disabled="!fotoPrincipalArchivo" @click="reemplazarFoto('principal')">{{ reemplazandoFoto === 'principal' ? 'Reemplazando...' : 'Reemplazar evidencia' }}</button></label>
               <label v-if="isAdmin"><span class="field-label">Evidencia {{ etiquetaFotoSecundaria }}</span><input ref="inputFotoCashIn" type="file" accept="image/jpeg,image/png,image/webp" class="input-texto" @change="seleccionarFoto('cash-in', $event)"><button type="button" class="boton boton-editar" :disabled="!fotoCashInArchivo" @click="reemplazarFoto('cash-in')">{{ reemplazandoFoto === 'cash-in' ? 'Reemplazando...' : `Reemplazar ${etiquetaFotoSecundaria}` }}</button></label>
-              <label><span class="field-label">Es plaza temporal</span><select v-model="formularioEdicion.es_plaza_temporal" class="input-texto"><option :value="false">No</option><option :value="true">Si</option></select></label>
-              <label v-if="formularioEdicion.es_plaza_temporal"><span class="field-label">Plaza temporal</span><input v-model="formularioEdicion.plaza_temporal" class="input-texto"></label>
               <label class="edicion-field-wide"><span class="field-label">Motivo de edicion</span><textarea v-model="motivoEdicion" class="input-texto" rows="3" placeholder="Obligatorio"></textarea></label>
               <p v-if="motivoEdicionFaltante" class="inline-warning edicion-field-wide">Guardar se habilitará cuando ingreses el motivo de edición.</p>
             </fieldset>

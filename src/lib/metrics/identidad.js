@@ -32,7 +32,7 @@ export const TIPOS_FUNCIONALES = [
  * @property {Map<string, string>} liderCatalogo leader id -> name, from the users catalog.
  * @property {Map<string, string>} activadorCatalogo activator id -> name, from the activations.
  * @property {{ porId: Map<string, { numero: string, nombre: string }>, numeroAId: Map<string, string> }} equipoCatalogo
- * @property {{ nombre?: string }[]} plazas
+ * @property {Map<string, string>} plazaPorCiudad normalized city key -> client plaza that groups it.
  */
 
 /** @param {Usuario | undefined} usuario */
@@ -50,8 +50,8 @@ export function rolesCatalogo(usuario) {
   ]
 }
 
-/** @param {{ activaciones: Activacion[], usuarios: Usuario[], plazas: { nombre?: string }[] }} datos @returns {Contexto} */
-export function crearContexto({ activaciones, usuarios, plazas }) {
+/** @param {{ activaciones: Activacion[], usuarios: Usuario[], ciudadesPorPlaza?: { ciudad: string, plaza: string }[] }} datos @returns {Contexto} */
+export function crearContexto({ activaciones, usuarios, ciudadesPorPlaza = [] }) {
   const usuariosPorId = new Map(
     usuarios.map((usuario) => [texto(usuario.usuario_id).toLowerCase(), usuario]),
   )
@@ -95,7 +95,7 @@ export function crearContexto({ activaciones, usuarios, plazas }) {
     liderCatalogo,
     activadorCatalogo,
     equipoCatalogo: catalogarEquipos(activaciones),
-    plazas,
+    plazaPorCiudad: new Map(ciudadesPorPlaza.map(({ ciudad, plaza }) => [normalizarPlazaClave(ciudad), plaza])),
   }
 }
 

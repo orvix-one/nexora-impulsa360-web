@@ -40,7 +40,7 @@ function montar(activaciones = rows, usuarios = users) {
   const ctx = crearContexto({
     activaciones: datos,
     usuarios: structuredClone(usuarios),
-    plazas: [],
+    ciudadesPorPlaza: [],
   })
   const filtros = filtrosVacios()
   const hoy = calendarioHoy(AHORA)
@@ -215,7 +215,7 @@ test('un fallo del catálogo no publica métricas de líder incompletas', async 
   await assertCount(vm, 0)
 })
 
-test('un fallo de plazas no impide cargar las métricas', async () => {
+test('un fallo al agrupar ciudades por plaza no impide cargar las métricas', async () => {
   const registrados = []
   const datos = await cargarDatosMetricas({
     fetchActivaciones: async () => structuredClone(rows),
@@ -226,8 +226,8 @@ test('un fallo de plazas no impide cargar las métricas', async () => {
     registrarError: (contexto) => registrados.push(contexto),
   })
   assert.equal(datos.activaciones.length, rows.length)
-  assert.deepEqual(datos.plazas, [])
-  assert.deepEqual(registrados, ['metricas.plazas'])
+  assert.deepEqual(datos.ciudadesPorPlaza, [])
+  assert.deepEqual(registrados, ['metricas.ciudades-por-plaza'])
 })
 
 test('equipo combina integrantes autorizados con 0, 1 y varias activaciones sin cambiar totales', async () => {

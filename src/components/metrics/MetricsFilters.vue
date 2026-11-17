@@ -1,9 +1,12 @@
 <script setup>
-import { FILTROS } from '../../lib/metrics/filtros'
+import { computed } from 'vue'
+import { agruparPorPlaza, FILTROS } from '../../lib/metrics/filtros'
 import { formatNumber } from '../../lib/metrics/formato'
 import { useMetricas } from '../../lib/metrics/useMetricas'
 
 const { filtros, opciones, dashboard, datos, hayFiltros, limpiarFiltros } = useMetricas()
+
+const gruposCiudad = computed(() => agruparPorPlaza(opciones.value.plazas))
 
 function visible(filtro) {
   return !filtro.ocultarSinOpciones || opciones.value[filtro.opciones].length > 0
@@ -32,6 +35,12 @@ function visible(filtro) {
             type="date"
             class="input-texto"
           />
+          <select v-else-if="filtro.opciones === 'plazas'" v-model="filtros[filtro.key]" class="input-texto">
+            <option value="">{{ filtro.vacio }}</option>
+            <optgroup v-for="grupo in gruposCiudad" :key="grupo.nombre" :label="grupo.nombre">
+              <option v-for="opcion in grupo.opciones" :key="opcion.key" :value="opcion.key">{{ opcion.nombre }}</option>
+            </optgroup>
+          </select>
           <select v-else v-model="filtros[filtro.key]" class="input-texto">
             <option value="">{{ filtro.vacio }}</option>
             <option

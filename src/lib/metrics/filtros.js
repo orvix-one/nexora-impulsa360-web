@@ -18,6 +18,21 @@ import {
 
 /** @typedef {import('./tipos.js').Filtros} Filtros */
 /** @typedef {import('./tipos.js').Opcion} Opcion */
+export const SIN_PLAZA = 'Sin plaza'
+/** @param {string | undefined} grupo */
+const ordenGrupo = (grupo) => (grupo === SIN_PLAZA ? '\uffff' : grupo ?? '')
+
+/** City options arrive sorted by group; consecutive runs become one optgroup. @param {Opcion[]} opciones */
+export function agruparPorPlaza(opciones) {
+  /** @type {{ nombre: string, opciones: Opcion[] }[]} */
+  const grupos = []
+  for (const opcion of opciones) {
+    const nombre = opcion.grupo ?? SIN_PLAZA
+    if (grupos.at(-1)?.nombre !== nombre) grupos.push({ nombre, opciones: [] })
+    grupos.at(-1)?.opciones.push(opcion)
+  }
+  return grupos
+}
 /** @typedef {import('./tipos.js').Activacion} Activacion */
 /** @typedef {import('./identidad.js').Contexto} Contexto */
 
@@ -195,12 +210,8 @@ export function construirOpciones(ctx) {
     const key = equipoKey(item, ctx)
     if (!equipos.has(key)) equipos.set(key, { key, nombre: equipoEtiqueta(item, key, ctx) })
   }
-  for (const plaza of ctx.plazas) {
-    const nombre = texto(plaza.nombre)
-    const clave = normalizarPlazaClave(nombre)
-    if (!clave) continue
-    const key = `pkey:${clave}`
-    if (!plazas.has(key)) plazas.set(key, { key, nombre })
+  for (const opcion of plazas.values()) {
+    opcion.grupo = ctx.plazaPorCiudad.get(normalizarPlazaClave(opcion.nombre)) ?? SIN_PLAZA
   }
   for (const usuario of ctx.catalogoActivadores) {
     const id = texto(usuario.equipo_id).toLowerCase()
@@ -256,7 +267,8 @@ export function construirOpciones(ctx) {
   const ordenar = (/** @type {Iterable<Opcion>} */ entries) =>
     [...entries].sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'))
   return {
-    plazas: ordenar(plazas.values()),
+    plazas: [...plazas.values()].sort((a, b) =>
+      ordenGrupo(a.grupo).localeCompare(ordenGrupo(b.grupo), 'es') || a.nombre.localeCompare(b.nombre, 'es')),
     activadores: ordenar(activadores.values()),
     tipos: ordenar(tipos.values()),
     lideres: ordenar(lideres.values()),

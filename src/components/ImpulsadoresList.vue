@@ -52,7 +52,7 @@ const columnasExcel = [
   ['Estado', (row) => row.estado || 'Sin estado'],
   ['Lider', (row) => nombreLider(row)],
   ['Equipo', (row) => row.equipo_numero ? `#${row.equipo_numero} - ${row.equipo_nombre || 'Equipo'}` : '-'],
-  ['Plaza temporal', (row) => row.plaza_temporal_activa ? row.plaza_efectiva : '-'],
+  ['Viaje', (row) => row.viaje_vigente?.destino ?? '-'],
   ['Usuario ID', (row) => row.usuario_id],
 ]
 
@@ -196,7 +196,7 @@ onMounted(async () => {
             <th>Estado</th>
             <th>Lider</th>
             <th>Equipo</th>
-            <th>Plaza temporal</th>
+            <th>Viaje</th>
           </tr>
         </thead>
         <tbody>
@@ -215,7 +215,7 @@ onMounted(async () => {
               <span>{{ impulsador.equipo_numero ? `#${impulsador.equipo_numero} - ${impulsador.equipo_nombre || 'Equipo'}` : '-' }}</span>
               <span v-if="impulsador.organizacion_pendiente" class="scope-pill scope-pill-user">Organización pendiente</span>
             </td>
-            <td><span v-if="impulsador.plaza_temporal_activa" class="scope-pill scope-pill-user">{{ impulsador.plaza_efectiva }}</span><span v-else>-</span></td>
+            <td><span v-if="impulsador.viaje_vigente" class="scope-pill scope-pill-user">{{ impulsador.viaje_vigente.destino }}</span><span v-else>-</span></td>
           </tr>
         </tbody>
       </table>

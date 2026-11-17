@@ -9,10 +9,11 @@ import {
 } from '../src/lib/plazas.js'
 import { fetchActivaciones } from '../server/activacionesExportacion.js'
 import { COLUMNAS_EXCEL, generarExcel } from '../src/lib/reportes/excel.js'
+import { crearContexto } from '../src/lib/metrics/identidad.js'
+import { agruparPorPlaza, construirOpciones } from '../src/lib/metrics/filtros.js'
 
 const componentSource = readFileSync(new URL('../src/components/ActivacionesTable.vue', import.meta.url), 'utf8')
 const identidadSource = readFileSync(new URL('../src/lib/metrics/identidad.js', import.meta.url), 'utf8')
-const filtrosMetricasSource = readFileSync(new URL('../src/lib/metrics/filtros.js', import.meta.url), 'utf8')
 const cargaMetricasSource = readFileSync(new URL('../src/lib/metrics/carga.js', import.meta.url), 'utf8')
 const serverExcelSource = readFileSync(new URL('../server/activacionesExportacion.js', import.meta.url), 'utf8')
 const plazasSource = readFileSync(new URL('../src/lib/plazas.js', import.meta.url), 'utf8')
@@ -100,18 +101,18 @@ async function leerExcel(filters) {
   return { rowCount: rows.length, encabezados: encabezados.filter(Boolean), filas }
 }
 
-test('el Excel separa Ciudad geográfica de Plaza Base y Plaza Efectiva', async () => {
+test('el Excel separa Ciudad geográfica de Plaza Base', async () => {
   const { encabezados, filas, rowCount } = await leerExcel({})
-  for (const columna of ['Ciudad', 'Zona de Activación', 'Plaza Base', 'Plaza Efectiva']) {
+  for (const columna of ['Ciudad', 'Zona de Activación', 'Plaza Base']) {
     assert.ok(encabezados.includes(columna), `falta la columna ${columna}`)
   }
   assert.ok(!encabezados.includes('Plaza'), 'la columna unica "Plaza" dejo de mezclar ciudad y plaza')
 
   assert.equal(rowCount, 3)
-  assert.deepEqual(filas.map((fila) => [fila.Ciudad, fila['Plaza Efectiva'], fila['Plaza Base']]), [
-    ['El Alto', 'La Paz', 'La Paz'],
-    ['La Paz', 'El Alto', 'El Alto'],
-    [SIN_CIUDAD_REGISTRADA, 'La Paz', ''],
+  assert.deepEqual(filas.map((fila) => [fila.Ciudad, fila['Plaza Base']]), [
+    ['El Alto', 'La Paz'],
+    ['La Paz', 'El Alto'],
+    [SIN_CIUDAD_REGISTRADA, ''],
   ])
 })
 
@@ -139,7 +140,7 @@ test('el listado, el detalle y las exportaciones del portal usan la misma ciudad
     componentSource.indexOf('\n]', componentSource.indexOf('const seccionesDetalleConfig = [')) + 2,
   )
   assert.match(detalle, /keys: \['fecha_activacion', 'impulsador', 'ciudad_activacion', 'plaza', 'zona_activacion'\]/)
-  assert.match(detalle, /keys: \['plaza_base_registro', 'plaza_efectiva_registro', 'plaza_temporal_registro'\]/)
+  assert.match(detalle, /keys: \['plaza_base_registro'\]/)
 
   assert.match(componentSource, /key === 'ciudad_activacion'\s*\?\s*etiquetaCiudadActivacion\(row\)/)
   assert.match(componentSource, /filter\(\(key\) => key === 'ciudad_activacion' \|\| tieneValor\(row\[key\]\)/,
@@ -176,11 +177,20 @@ test('el filtro del listado normaliza la ciudad igual que la exportación', () =
   assert.doesNotMatch(componentSource, /const activacionesFiltradas = computed\(/, 'la tabla no filtra en el navegador')
 })
 
-test('el filtro de ciudad une las plazas activas aunque no tengan activaciones', () => {
-  assert.match(cargaMetricasSource, /solicitar\('\/portal\/plazas'\)/)
-  const inicio = filtrosMetricasSource.indexOf('for (const plaza of ctx.plazas)')
-  const cuerpo = filtrosMetricasSource.slice(inicio, filtrosMetricasSource.indexOf('}\n', inicio + 200))
-  assert.match(cuerpo, /`pkey:\$\{clave\}`/)
-  assert.match(cuerpo, /plazas\.set\(key, \{ key, nombre \}\)/)
-  assert.match(cuerpo, /!plazas\.has\(key\)/)
+test('el filtro de ciudad agrupa los municipios por plaza y solo ofrece ciudades con activaciones', () => {
+  const ctx = crearContexto({
+    activaciones: [
+      { id: 'a', ciudad_activacion: 'Puerto Quijarro' },
+      { id: 'b', ciudad_activacion: 'Santa Cruz de la Sierra' },
+      { id: 'c', ciudad_activacion: 'Sacaba' },
+    ],
+    usuarios: [],
+    ciudadesPorPlaza: [{ ciudad: 'Santa Cruz de la Sierra', plaza: 'Santa Cruz de la Sierra' }, { ciudad: 'Cochabamba', plaza: 'Cochabamba' }],
+  })
+  const grupos = agruparPorPlaza(construirOpciones(ctx).plazas)
+  assert.deepEqual(grupos.map((g) => [g.nombre, g.opciones.map((o) => o.nombre)]), [
+    ['Santa Cruz de la Sierra', ['Santa Cruz de la Sierra']],
+    ['Sin plaza', ['Puerto Quijarro', 'Sacaba']],
+  ])
+  assert.match(cargaMetricasSource, /solicitar\('\/portal\/ciudades-por-plaza'\)/)
 })

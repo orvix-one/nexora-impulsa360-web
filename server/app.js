@@ -13,6 +13,7 @@ import { aplicarFiltrosActivaciones, crearCatalogoCiudades, normalizarFiltros, r
 import { SELECT_LISTADO_ACTIVACIONES, parsearPagina } from './activacionesListado.js'
 import { parsearAliasesPlaza } from '../src/lib/plazas.js'
 import { cargarActivacionesMetricas } from './metricasActivaciones.js'
+import { nombresMunicipios, registrarRutasViajes } from './viajes.js'
 import {
   activationClassificationUpdate,
   isCreditosEligible,
@@ -33,7 +34,6 @@ const ACTIVATION_EDITABLE_FIELDS = new Set([
   'telefono_cliente',
   'email_cliente',
   'plaza',
-  'ciudad_activacion',
   'zona_activacion',
   'tipo_activacion',
   'resultado',
@@ -57,8 +57,6 @@ const ACTIVATION_EDITABLE_FIELDS = new Set([
   'creditos',
   'remesas',
   'hubo_error',
-  'es_plaza_temporal',
-  'plaza_temporal',
 ])
 const ALLOWED_STORE_SIZES = new Set(['Pequeña', 'Mediana', 'Grande'])
 const ALLOWED_USER_ROLES = new Set(['activador', 'lider', 'facturador', 'administrador', 'banco'])
@@ -82,7 +80,6 @@ function resolveUserRoles(body, previousRoles = [], previousRol = null) {
   return { roles, rol: requestedRol || (roles.includes(previousRol) ? previousRol : USER_ROLE_PRIORITY.find((rol) => roles.includes(rol))) }
 }
 const ALLOWED_USER_STATES = new Set(['activo', 'inhabilitado'])
-const ALLOWED_TEMPORARY_ZONE_TYPES = new Set(['universidad', 'feria', 'evento', 'campana', 'punto_temporal'])
 const REQUIRED_ENV = [
   'SUPABASE_URL',
   'SUPABASE_SERVICE_ROLE_KEY',
@@ -890,15 +887,14 @@ export function createAdminApiApp({
 
     try {
       const now = new Date().toISOString()
-      let [{ data: teams, error: teamsError }, { data: temporaryPlazas, error: temporaryError }] =
+      let [{ data: teams, error: teamsError }, { data: currentTrips, error: tripsError }] =
         await Promise.all([
           teamIds.length
             ? adminSupabase.from('equipos').select('id,numero,nombre,facturador_id,lider_actual_id,plaza_id').in('id', teamIds)
             : Promise.resolve({ data: [], error: null }),
           userIds.length
-            ? adminSupabase.from('activador_plaza_temporal')
-              .select('activador_id,plaza_temporal,inicio,fin,motivo,autorizado_por,tipo_zona,ciudad_plaza,activo')
-              .in('activador_id', userIds).lte('inicio', now).gte('fin', now).eq('activo', true).is('cancelado_at', null)
+            ? adminSupabase.from('viajes').select('id,activador_id,municipio_id,inicio,fin')
+              .in('activador_id', userIds).lte('inicio', now).gt('fin', now).is('cancelado_at', null)
             : Promise.resolve({ data: [], error: null }),
         ])
       if (teamsError && teamIds.length) {
@@ -907,7 +903,7 @@ export function createAdminApiApp({
         teams = legacyTeams.data
         teamsError = legacyTeams.error
       }
-      if (teamsError || temporaryError) return users
+      if (teamsError || tripsError) return users
 
       let { data: ledTeams, error: ledTeamsError } = userIds.length
         ? await adminSupabase.from('equipos')
@@ -950,17 +946,18 @@ export function createAdminApiApp({
           : Promise.resolve({ data: [], error: null }),
       ])
       if (billersError || plazasError || leadersError) return users
+      const tripDestinations = await nombresMunicipios(adminSupabase, (currentTrips ?? []).map((trip) => trip.municipio_id))
 
       const teamsById = new Map((teams ?? []).map((team) => [team.id, team]))
       const billersById = new Map([...(billers ?? []), ...linkedBillers].map((biller) => [biller.id, biller]))
       const billerByUser = new Map(linkedBillers.map((biller) => [biller.usuario_id, biller]))
       const plazasById = new Map((plazas ?? []).map((plaza) => [plaza.id, plaza]))
       const leadersById = new Map((leaders ?? []).map((leader) => [leader.usuario_id, leader]))
-      const temporaryByUser = new Map((temporaryPlazas ?? []).map((item) => [item.activador_id, item]))
+      const tripByUser = new Map((currentTrips ?? []).map((trip) => [trip.activador_id, trip]))
       return users.map((user) => {
         const team = teamsById.get(user.equipo_id)
         const biller = billersById.get(team?.facturador_id)
-        const temporary = temporaryByUser.get(user.usuario_id)
+        const trip = tripByUser.get(user.usuario_id)
         const teamPlaza = plazasById.get(team?.plaza_id)
         const assignedTeams = (teams ?? []).filter((item) => item.lider_actual_id === user.usuario_id)
         const userBiller = billerByUser.get(user.usuario_id)
@@ -971,9 +968,7 @@ export function createAdminApiApp({
         return {
           ...user,
           plaza_base: user.plaza_base ?? user.plaza ?? null,
-          plaza_efectiva: temporary?.plaza_temporal ?? user.plaza_base ?? user.plaza ?? null,
-          plaza_temporal_activa: Boolean(temporary),
-          plaza_temporal_vigente: temporary ?? null,
+          viaje_vigente: trip ? { id: trip.id, destino: tripDestinations.get(trip.municipio_id) ?? null, inicio: trip.inicio, fin: trip.fin } : null,
           plaza_id: team?.plaza_id ?? null,
           plaza_nombre: teamPlaza?.nombre ?? user.plaza_base ?? user.plaza ?? null,
           equipo_numero: team?.numero ?? null,
@@ -1028,22 +1023,6 @@ export function createAdminApiApp({
     } catch {
       return null
     }
-  }
-
-  async function resolveOrCreatePlaza(nombre) {
-    const normalized = normalizeOrganizationName(nombre)
-    if (!normalized) return null
-    const { data: existing, error: readError } = await adminSupabase.from('plazas')
-      .select('id').eq('nombre_normalizado', normalized).maybeSingle()
-    if (!readError && existing) return existing.id
-    if (readError) return null
-    const { data: created, error: createError } = await adminSupabase.from('plazas')
-      .insert({ nombre: normalizeText(nombre), nombre_normalizado: normalized })
-      .select('id').single()
-    if (!createError) return created.id
-    const { data: concurrent } = await adminSupabase.from('plazas')
-      .select('id').eq('nombre_normalizado', normalized).maybeSingle()
-    return concurrent?.id ?? null
   }
 
   async function loadOrganizationOptions() {
@@ -1349,6 +1328,23 @@ export function createAdminApiApp({
     }
     res.json({ plazas: data ?? [] })
   }))
+  app.get('/portal/ciudades-por-plaza', asyncRoute(async (_req, res) => {
+    const [vinculos, plazas] = await Promise.all([
+      adminSupabase.from('plaza_municipios').select('plaza_id,municipio_id'),
+      adminSupabase.from('plazas').select('id,nombre'),
+    ])
+    if (vinculos.error || plazas.error) {
+      jsonError(res, 500, 'No se pudo obtener las plazas de cada ciudad.', (vinculos.error ?? plazas.error).message)
+      return
+    }
+    const ciudades = await nombresMunicipios(adminSupabase, (vinculos.data ?? []).map((v) => v.municipio_id))
+    const plazaNombre = new Map((plazas.data ?? []).map((p) => [p.id, p.nombre]))
+    res.json({
+      ciudades: (vinculos.data ?? [])
+        .map((v) => ({ ciudad: ciudades.get(v.municipio_id), plaza: plazaNombre.get(v.plaza_id) }))
+        .filter((v) => v.ciudad && v.plaza),
+    })
+  }))
   app.get('/portal/users', asyncRoute(async (req, res) => {
     let query = adminSupabase.from('activadores').select('*').order('nombre')
     if (!req.user.isAdmin && req.user.rol === 'lider') query = query.eq('lider_id', req.user.usuario_id)
@@ -1456,6 +1452,8 @@ export function createAdminApiApp({
   app.get('/admin/healthz', (_req, res) => {
     res.json({ ok: true })
   })
+
+  registrarRutasViajes(app, { adminSupabase, asyncRoute, jsonError })
 
   app.get(
     '/admin/users',
@@ -1845,8 +1843,6 @@ export function createAdminApiApp({
         adminSupabase.from('activadores').select('usuario_id', { count: 'exact', head: true }).eq('plaza_id', plazaId),
         adminSupabase.from('activaciones').select('id', { count: 'exact', head: true }).eq('plaza_id_registro', plazaId),
         adminSupabase.from('activaciones').select('id', { count: 'exact', head: true }).eq('plaza_base_id_registro', plazaId),
-        adminSupabase.from('activaciones').select('id', { count: 'exact', head: true }).eq('plaza_efectiva_id_registro', plazaId),
-        adminSupabase.from('activador_plaza_temporal').select('id', { count: 'exact', head: true }).eq('plaza_temporal_id', plazaId),
       ])
 
       const failedCheck = relationChecks.find(({ error }) => error)
@@ -1950,90 +1946,6 @@ export function createAdminApiApp({
     if (error) { jsonError(res, 500, 'No se pudo actualizar la plaza.', error.message); return }
     res.json({ ok: true })
   }))
-
-  app.post(
-    '/admin/users/:userId/temporary-plaza',
-    asyncRoute(async (req, res) => {
-      const userId = normalizeText(req.params?.userId)
-      const plazaTemporal = normalizeText(req.body?.plaza_temporal)
-      const inicio = new Date(req.body?.inicio)
-      const fin = new Date(req.body?.fin)
-      const motivo = normalizeText(req.body?.motivo)
-      const tipoZona = normalizeText(req.body?.tipo_zona) || 'punto_temporal'
-      const ciudadPlaza = normalizeNullableText(req.body?.ciudad_plaza)
-      const activo = req.body?.activo !== false
-      const authorizedBy = req.user.usuario_id
-      if (!userId || !plazaTemporal || !motivo || Number.isNaN(inicio.getTime()) || Number.isNaN(fin.getTime()) || fin <= inicio) {
-        jsonError(res, 400, 'activador, plaza temporal, inicio, fin y motivo validos son obligatorios.')
-        return
-      }
-      if (!ALLOWED_TEMPORARY_ZONE_TYPES.has(tipoZona)) {
-        jsonError(res, 400, 'tipo_zona invalido.')
-        return
-      }
-
-      if (!authorizedBy) {
-        jsonError(res, 400, 'La asignacion temporal requiere una sesion administrativa identificable.')
-        return
-      }
-      const { data: user, error: userError } = await adminSupabase.from('activadores')
-        .select('usuario_id,estado').eq('usuario_id', userId).maybeSingle()
-      if (userError || !user || user.estado !== 'activo') {
-        jsonError(res, 400, 'La plaza temporal solo puede asignarse a un usuario activo.', userError?.message)
-        return
-      }
-      const temporaryPlazaId = await resolveOrCreatePlaza(plazaTemporal)
-      const temporaryPayload = {
-        activador_id: userId,
-        plaza_temporal: plazaTemporal,
-        inicio: inicio.toISOString(),
-        fin: fin.toISOString(),
-        motivo,
-        tipo_zona: tipoZona,
-        ciudad_plaza: ciudadPlaza,
-        activo,
-        autorizado_por: authorizedBy,
-      }
-      if (temporaryPlazaId) temporaryPayload.plaza_temporal_id = temporaryPlazaId
-      const { data, error } = await adminSupabase.from('activador_plaza_temporal')
-        .insert(temporaryPayload).select('*').single()
-      if (error) {
-        if (isMissingOrganizationSchema(error)) {
-          jsonError(res, 409, 'La plaza temporal estara disponible cuando se habilite el modelo organizacional.')
-          return
-        }
-        jsonError(res, error.code === '23P01' ? 409 : 500,
-          error.code === '23P01' ? 'El periodo se solapa con otra plaza temporal.' : 'No se pudo asignar la plaza temporal.', error.message)
-        return
-      }
-      res.status(201).json({ assignment: data })
-    })
-  )
-
-  app.delete(
-    '/admin/users/:userId/temporary-plaza',
-    asyncRoute(async (req, res) => {
-      const now = new Date().toISOString()
-      const authorizedBy = req.user.usuario_id
-      if (!authorizedBy) {
-        jsonError(res, 400, 'La cancelacion requiere una sesion administrativa identificable.')
-        return
-      }
-      const { error } = await adminSupabase.from('activador_plaza_temporal').update({
-        cancelado_at: now,
-        cancelado_por: authorizedBy,
-      }).eq('activador_id', req.params.userId).is('cancelado_at', null).lte('inicio', now).gte('fin', now)
-      if (error) {
-        if (isMissingOrganizationSchema(error)) {
-          jsonError(res, 409, 'No hay una asignacion temporal administrable en el esquema actual.')
-          return
-        }
-        jsonError(res, 500, 'No se pudo cancelar la plaza temporal.', error.message)
-        return
-      }
-      res.json({ ok: true })
-    })
-  )
 
   app.patch(
     '/admin/users/:userId',
@@ -2539,7 +2451,7 @@ export function createAdminApiApp({
 
       const updatePayload = {}
       for (const key of changeKeys) {
-        if (['comercio_fuera_mercado', 'es_plaza_temporal', 'descargo_app', 'registro', 'cash_in',
+        if (['comercio_fuera_mercado', 'descargo_app', 'registro', 'cash_in',
           'cash_out', 'p2p', 'qr_fisico', 'respaldo', 'creditos', 'remesas', 'hubo_error'].includes(key)) {
           if (key === 'comercio_fuera_mercado' && changes[key] === null) {
             updatePayload[key] = null
@@ -2631,10 +2543,6 @@ export function createAdminApiApp({
       }
 
       const mergedRow = { ...existingRow, ...actualUpdatePayload }
-      if (mergedRow.es_plaza_temporal === true && !normalizeText(mergedRow.plaza_temporal)) {
-        jsonError(res, 400, 'plaza_temporal es obligatoria para una plaza temporal.')
-        return
-      }
       if (normalizeText(mergedRow.rubro_comercio).toLowerCase() === 'otro' &&
         !normalizeText(mergedRow.rubro_comercio_otro)) {
         jsonError(res, 400, 'rubro_comercio_otro es obligatorio cuando el rubro es Otro.')
@@ -2700,14 +2608,14 @@ export function createAdminApiApp({
       const checks = await Promise.all([
         adminSupabase.from('activadores').select('usuario_id', { count: 'exact', head: true }).eq('lider_id', userId),
         adminSupabase.from('equipos').select('id', { count: 'exact', head: true }).eq('lider_actual_id', userId),
-        adminSupabase.from('activador_plaza_temporal').select('id', { count: 'exact', head: true }).eq('activador_id', userId).lte('inicio', now).gte('fin', now).eq('activo', true).is('cancelado_at', null),
+        adminSupabase.from('viajes').select('id', { count: 'exact', head: true }).eq('activador_id', userId).lte('inicio', now).gt('fin', now).is('cancelado_at', null),
       ])
       const failedCheck = checks.find((item) => item.error)
       if (failedCheck) { jsonError(res, 500, 'No se pudo verificar relaciones activas del usuario.', failedCheck.error.message); return }
-      const [lideradosCount, equiposLideradosCount, plazasVigentesCount] = checks.map((item) => item.count ?? 0)
+      const [lideradosCount, equiposLideradosCount, viajesVigentesCount] = checks.map((item) => item.count ?? 0)
       if (lideradosCount > 0) { res.status(409).json({ ok: false, deleted: false, message: 'No se puede eliminar la cuenta porque el usuario tiene activadores a su cargo. Reasignelos antes de continuar.' }); return }
       if (equiposLideradosCount > 0) { res.status(409).json({ ok: false, deleted: false, message: 'No se puede eliminar la cuenta porque el usuario lidera equipos vigentes. Libere el liderazgo antes de continuar.' }); return }
-      if (plazasVigentesCount > 0) { res.status(409).json({ ok: false, deleted: false, message: 'No se puede eliminar la cuenta porque el usuario tiene una plaza temporal vigente. Cancelela antes de continuar.' }); return }
+      if (viajesVigentesCount > 0) { res.status(409).json({ ok: false, deleted: false, message: 'No se puede eliminar la cuenta porque el usuario tiene un viaje vigente. Cancélelo antes de continuar.' }); return }
 
       if (!existingRow.auth_user_id) {
         res.json({ ok: true, deleted: true, authDeleted: false, cuentaAccesoEliminada: true, estado: 'inhabilitado', message: 'La cuenta de acceso ya estaba eliminada. El perfil y el historial se conservan como Inhabilitado.' })

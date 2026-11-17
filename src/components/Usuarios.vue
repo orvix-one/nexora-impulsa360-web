@@ -8,13 +8,6 @@ import { deduplicarPlazas, deduplicarPlazasCatalogo, mismaPlaza } from '../lib/p
 
 const roles = ['activador', 'lider', 'facturador', 'administrador', 'banco']
 const estados = ['activo', 'inhabilitado']
-const tiposZonaTemporal = [
-  { value: 'universidad', label: 'Universidad' },
-  { value: 'feria', label: 'Feria' },
-  { value: 'evento', label: 'Evento' },
-  { value: 'campana', label: 'Campaña' },
-  { value: 'punto_temporal', label: 'Punto temporal' },
-]
 const { isAdmin } = useAuth()
 const usuarios = ref([])
 const loading = ref(false)
@@ -33,9 +26,6 @@ const edicion = ref({})
 const modalInhabilitar = ref(false)
 const usuarioAInhabilitar = ref(null)
 const motivoInhabilitar = ref('')
-const usuarioPlazaTemporal = ref(null)
-const plazaTemporalForm = ref({ plaza_temporal: '', tipo_zona: 'punto_temporal', ciudad_plaza: '', inicio: '', fin: '', motivo: '', activo: true })
-const zonaEventoForm = ref({ plaza_temporal: '', tipo_zona: 'evento', ciudad_plaza: '', inicio: '', fin: '', motivo: '', activo: true, activador_ids: [] })
 
 const lideresActivos = computed(() => usuarios.value.filter((u) => esRol(u, 'lider') && (u.estado ?? 'activo') === 'activo'))
 const plazasCatalogo = computed(() => deduplicarPlazasCatalogo(organizacion.value.plazas))
@@ -46,7 +36,6 @@ const equiposFiltro = computed(() => organizacion.value.equipos
   .filter((equipo) => equipo.activo)
   .map((equipo) => ({ id: equipo.id, etiqueta: etiquetaEquipo(equipo) })))
 const usuariosPorId = computed(() => Object.fromEntries(usuarios.value.map((u) => [u.usuario_id, u])))
-const activadoresActivos = computed(() => usuarios.value.filter((u) => esRol(u, 'activador') && (u.estado ?? 'activo') === 'activo'))
 const usuariosFiltrados = computed(() => usuarios.value.filter((u) => {
   const coincideBusqueda = containsNormalized(u.nombre, busqueda.value) || containsNormalized(u.email, busqueda.value)
   const coincideEquipo = !filtroEquipoId.value ||
@@ -206,51 +195,8 @@ async function eliminarCuenta(usuario) {
   catch (error) { notifyError(error?.status === 409 && error.message && !error.message.startsWith('Error HTTP') ? error.message : getErrorMessage(error)) }
   finally { procesando.value = false }
 }
-function abrirPlazaTemporal(usuario) {
-  usuarioPlazaTemporal.value = usuario
-  plazaTemporalForm.value = { plaza_temporal: '', tipo_zona: 'punto_temporal', ciudad_plaza: usuario.plaza_nombre || usuario.plaza_base || usuario.plaza || '', inicio: '', fin: '', motivo: '', activo: true }
-}
-function cerrarPlazaTemporal() { if (!procesando.value) usuarioPlazaTemporal.value = null }
-async function cambiarPlazaTemporal(usuario, event) {
-  const enabled = event.target.checked
-  event.target.checked = usuario.plaza_temporal_activa === true
-  if (enabled) { abrirPlazaTemporal(usuario); return }
-  procesando.value = true
-  try {
-    await apiRequest(`/admin/users/${usuario.usuario_id}/temporary-plaza`, { method: 'DELETE' })
-    await cargarUsuarios(); notifySuccess('Plaza temporal cancelada; vuelve a la plaza base.')
-  } catch (error) { notifyError(getErrorMessage(error)) }
-  finally { procesando.value = false }
-}
-async function guardarPlazaTemporal() {
-  const form = plazaTemporalForm.value
-  if (!form.plaza_temporal.trim() || !form.inicio || !form.fin || !form.motivo.trim()) {
-    notifyWarning('Completa zona temporal, inicio, fin y motivo.'); return
-  }
-  procesando.value = true
-  try {
-    await apiRequest(`/admin/users/${usuarioPlazaTemporal.value.usuario_id}/temporary-plaza`, {
-      method: 'POST', body: { ...form, inicio: new Date(form.inicio).toISOString(), fin: new Date(form.fin).toISOString() },
-    })
-    usuarioPlazaTemporal.value = null; await cargarUsuarios(); notifySuccess('Plaza temporal programada correctamente.')
-  } catch (error) { notifyError(getErrorMessage(error)) }
-  finally { procesando.value = false }
-}
-async function guardarZonaEvento() {
-  const form = zonaEventoForm.value
-  if (!form.plaza_temporal.trim() || !form.inicio || !form.fin || !form.motivo.trim() || !form.activador_ids.length) {
-    notifyWarning('Completa zona/evento, fechas, motivo y al menos un activador.'); return
-  }
-  procesando.value = true
-  try {
-    const body = { ...form, inicio: new Date(form.inicio).toISOString(), fin: new Date(form.fin).toISOString() }
-    for (const activadorId of form.activador_ids) {
-      await apiRequest(`/admin/users/${activadorId}/temporary-plaza`, { method: 'POST', body })
-    }
-    zonaEventoForm.value = { plaza_temporal: '', tipo_zona: 'evento', ciudad_plaza: '', inicio: '', fin: '', motivo: '', activo: true, activador_ids: [] }
-    await cargarUsuarios(); notifySuccess('Zona/evento asignado correctamente.')
-  } catch (error) { notifyError(getErrorMessage(error)) }
-  finally { procesando.value = false }
+function fechaCorta(valor) {
+  return new Date(valor).toLocaleDateString('es-BO', { day: '2-digit', month: '2-digit', timeZone: 'America/La_Paz' })
 }
 
 onMounted(cargarUsuarios)
@@ -288,21 +234,6 @@ onMounted(cargarUsuarios)
           <button type="submit" class="boton boton-primario" :disabled="procesando">{{ procesando ? 'Guardando...' : 'Registrar' }}</button>
         </form>
       </div>
-      <div class="formulario-registro">
-        <h2 class="subtitulo">Zonas / eventos especiales</h2>
-        <form class="formulario-campos" @submit.prevent="guardarZonaEvento">
-          <input v-model="zonaEventoForm.plaza_temporal" placeholder="Nombre de zona/evento" class="input-texto">
-          <select v-model="zonaEventoForm.tipo_zona" class="input-texto"><option v-for="tipo in tiposZonaTemporal" :key="tipo.value" :value="tipo.value">{{ tipo.label }}</option></select>
-          <select v-if="organizacion.available" v-model="zonaEventoForm.ciudad_plaza" class="input-texto"><option value="">Ciudad/plaza</option><option v-for="plaza in plazasCatalogo" :key="plaza.id" :value="plaza.nombre">{{ plaza.nombre }}</option></select>
-          <input v-else v-model="zonaEventoForm.ciudad_plaza" placeholder="Ciudad/plaza" class="input-texto">
-          <label><span class="field-label">Inicio</span><input v-model="zonaEventoForm.inicio" type="datetime-local" class="input-texto"></label>
-          <label><span class="field-label">Fin</span><input v-model="zonaEventoForm.fin" type="datetime-local" class="input-texto"></label>
-          <textarea v-model="zonaEventoForm.motivo" class="input-texto" placeholder="Motivo obligatorio" rows="3"></textarea>
-          <label class="scope-pill"><input v-model="zonaEventoForm.activo" type="checkbox"> Activo</label>
-          <label><span class="field-label">Activadores asignados</span><select v-model="zonaEventoForm.activador_ids" class="input-texto" multiple><option v-for="usuario in activadoresActivos" :key="usuario.usuario_id" :value="usuario.usuario_id">{{ usuario.nombre || usuario.email }}</option></select></label>
-          <button type="submit" class="boton boton-primario" :disabled="procesando">{{ procesando ? 'Guardando...' : 'Asignar zona/evento' }}</button>
-        </form>
-      </div>
     </div>
     <div class="panel-card tabla-contenedor">
       <div class="toolbar-line"><h2 class="subtitulo subtitulo-inline">Usuarios Registrados</h2><div class="toolbar-actions"><span class="meta-pill">{{ usuariosFiltrados.length }} visibles</span><button class="boton" :disabled="loading || procesando" @click="cargarUsuarios">Recargar</button></div></div>
@@ -338,17 +269,16 @@ onMounted(cargarUsuarios)
             <td><input v-model="edicion.password" type="password" class="input-editar" placeholder="Opcional (contraseña fuerte)"></td><td><div class="acciones"><button class="boton boton-guardar" :disabled="procesando" @click="guardarEdicion">Guardar</button><button class="boton boton-cancelar" :disabled="procesando" @click="cancelarEdicion">Cancelar</button></div></td>
           </template>
           <template v-else>
-            <td>{{ usuario.nombre || 'Sin nombre' }}<span v-if="usuario.organizacion_pendiente" class="scope-pill scope-pill-user">Organización pendiente</span></td><td>{{ usuario.email || 'Sin correo' }}</td><td>{{ usuario.plaza_nombre || usuario.plaza_base || usuario.plaza || 'Sin plaza' }}<span v-if="usuario.plaza_temporal_activa" class="scope-pill scope-pill-user">Temporal: {{ usuario.plaza_efectiva }}</span></td>
+            <td>{{ usuario.nombre || 'Sin nombre' }}<span v-if="usuario.organizacion_pendiente" class="scope-pill scope-pill-user">Organización pendiente</span></td><td>{{ usuario.email || 'Sin correo' }}</td><td>{{ usuario.plaza_nombre || usuario.plaza_base || usuario.plaza || 'Sin plaza' }}<router-link v-if="usuario.viaje_vigente" to="/viajes" class="scope-pill scope-pill-user">De viaje · {{ usuario.viaje_vigente.destino }} hasta {{ fechaCorta(usuario.viaje_vigente.fin) }}</router-link></td>
             <td>{{ equiposDelUsuario(usuario) }}</td><td>{{ nombreLider(usuario) }}</td><td>{{ usuario.facturador_nombre || '-' }}</td><td>{{ rolesUsuario(usuario).map(etiqueta).join(', ') }}</td>
             <td>{{ esRol(usuario, 'lider') ? (usuario.puede_activar === true ? 'Sí' : 'No') : '-' }}</td>
             <td><span class="estado-etiqueta" :class="`estado-${usuario.estado ?? 'activo'}`">{{ etiqueta(usuario.estado ?? 'activo') }}</span></td><td>-</td>
-            <td><div class="acciones"><label v-if="esRol(usuario, 'activador')" class="scope-pill"><input type="checkbox" :checked="usuario.plaza_temporal_activa" :disabled="procesando" @change="cambiarPlazaTemporal(usuario, $event)"> Plaza temporal</label><button class="boton boton-editar" :disabled="procesando" @click="editarUsuario(usuario)">Editar</button><button v-if="(usuario.estado ?? 'activo') === 'activo'" class="boton boton-eliminar" :disabled="procesando" @click="abrirInhabilitacion(usuario)">Inhabilitar</button><button v-else class="boton boton-guardar" :disabled="procesando" @click="activarUsuario(usuario)">Activar</button><button v-if="(usuario.estado ?? 'activo') !== 'activo' && !usuario.cuenta_acceso_eliminada" class="boton boton-eliminar" :disabled="procesando" @click="eliminarCuenta(usuario)">Eliminar cuenta</button><span v-else-if="usuario.cuenta_acceso_eliminada" class="scope-pill">Cuenta eliminada</span></div></td>
+            <td><div class="acciones"><button class="boton boton-editar" :disabled="procesando" @click="editarUsuario(usuario)">Editar</button><button v-if="(usuario.estado ?? 'activo') === 'activo'" class="boton boton-eliminar" :disabled="procesando" @click="abrirInhabilitacion(usuario)">Inhabilitar</button><button v-else class="boton boton-guardar" :disabled="procesando" @click="activarUsuario(usuario)">Activar</button><button v-if="(usuario.estado ?? 'activo') !== 'activo' && !usuario.cuenta_acceso_eliminada" class="boton boton-eliminar" :disabled="procesando" @click="eliminarCuenta(usuario)">Eliminar cuenta</button><span v-else-if="usuario.cuenta_acceso_eliminada" class="scope-pill">Cuenta eliminada</span></div></td>
           </template>
         </tr>
       </tbody></table></div>
     </div>
     <teleport to="body"><div v-if="modalInhabilitar" class="confirm-overlay" @click.self="cerrarInhabilitacion"><section class="confirm-modal" role="dialog" aria-modal="true" aria-label="Inhabilitar usuario"><h3 class="confirm-title">Inhabilitar usuario</h3><p class="confirm-message">Indica por que se inhabilitara a {{ usuarioAInhabilitar?.nombre ?? 'este usuario' }}.</p><textarea v-model="motivoInhabilitar" class="input-texto" placeholder="Motivo obligatorio" rows="4"></textarea><div class="confirm-actions"><button class="boton boton-cancelar" :disabled="procesando" @click="cerrarInhabilitacion">Cancelar</button><button class="boton boton-eliminar" :disabled="procesando || !motivoInhabilitar.trim()" @click="confirmarInhabilitacion">{{ procesando ? 'Guardando...' : 'Inhabilitar' }}</button></div></section></div></teleport>
-    <teleport to="body"><div v-if="usuarioPlazaTemporal" class="confirm-overlay" @click.self="cerrarPlazaTemporal"><section class="confirm-modal" role="dialog" aria-modal="true" aria-label="Asignar plaza temporal"><h3 class="confirm-title">Plaza temporal</h3><p class="confirm-message">Asignación temporal para {{ usuarioPlazaTemporal.nombre }}. Su plaza base no cambiará.</p><select v-if="organizacion.available" v-model="plazaTemporalForm.plaza_temporal" class="input-texto"><option value="">Plaza temporal</option><option v-for="plaza in plazasCatalogo" :key="plaza.id" :value="plaza.nombre">{{ plaza.nombre }}</option></select><input v-else v-model="plazaTemporalForm.plaza_temporal" class="input-texto" placeholder="Plaza temporal"><select v-model="plazaTemporalForm.tipo_zona" class="input-texto"><option v-for="tipo in tiposZonaTemporal" :key="tipo.value" :value="tipo.value">{{ tipo.label }}</option></select><input v-model="plazaTemporalForm.ciudad_plaza" class="input-texto" placeholder="Ciudad/plaza"><label><span class="field-label">Inicio</span><input v-model="plazaTemporalForm.inicio" type="datetime-local" class="input-texto"></label><label><span class="field-label">Fin</span><input v-model="plazaTemporalForm.fin" type="datetime-local" class="input-texto"></label><textarea v-model="plazaTemporalForm.motivo" class="input-texto" placeholder="Motivo obligatorio" rows="3"></textarea><label class="scope-pill"><input v-model="plazaTemporalForm.activo" type="checkbox"> Activo</label><div class="confirm-actions"><button class="boton boton-cancelar" :disabled="procesando" @click="cerrarPlazaTemporal">Cancelar</button><button class="boton boton-guardar" :disabled="procesando" @click="guardarPlazaTemporal">{{ procesando ? 'Guardando...' : 'Asignar' }}</button></div></section></div></teleport>
   </section>
 </template>
 

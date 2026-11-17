@@ -13,7 +13,7 @@ Domain knowledge the schema and code do not state on their own. Columns, types a
 - **Viaje**: un activador trabaja en otro municipio entre dos fechas (`viajes`, sin solaparse por activador).
 - **Lugar**: punto (lat, lon) con radio donde se asignan activadores por un rango de fechas u horas (`lugares`, `lugar_asignaciones`, una fila por activador; las creadas juntas comparten `lote_id`). Las asignaciones pueden solaparse.
 - **Equipo / líder / facturador**: un activador pertenece a un equipo de una plaza; el equipo tiene un líder y un facturador. Todo cambia en el tiempo y se guarda en historiales (`activador_equipo_historial`, `equipo_lider_historial`).
-- **Snapshot de organización**: al insertar una activación, `trg_snapshot_organizacion_activacion` copia equipo, líder, facturador y plaza vigentes en `created_at` a las columnas `*_registro`. Así los reportes históricos no cambian cuando la organización cambia. Solo el servidor las escribe.
+- **Snapshot de organización**: al insertar una activación, `trg_snapshot_organizacion_activacion` copia equipo, líder, facturador y plaza base vigentes en `created_at` a las columnas `*_registro`. Así los reportes históricos no cambian cuando la organización cambia. Solo el servidor las escribe.
 
 ## Núcleo vs. específico del cliente
 

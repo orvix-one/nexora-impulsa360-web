@@ -66,6 +66,7 @@
  * @typedef {object} Opcion
  * @property {string} key
  * @property {string} nombre
+ * @property {string} [grupo] Client plaza that groups a city option.
  */
 
 /**
