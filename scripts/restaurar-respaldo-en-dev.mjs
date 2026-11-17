@@ -56,7 +56,7 @@ export function sqlInsertarDesdeTemporal(tabla, columnas) {
   const destino = tabla.split('.').map(quoteIdent).join('.')
   const lista = columnas.map(quoteIdent).join(', ')
   const valores = columnas.map((columna) => reglas[columna] ?? quoteIdent(columna)).join(', ')
-  return `insert into ${destino} (${lista}) select ${valores} from carga`
+  return `insert into ${destino} (${lista}) overriding system value select ${valores} from carga`
 }
 
 /** @param {Buffer} csv */
@@ -107,6 +107,7 @@ async function restaurar(args) {
       const [esquema, tabla] = archivo.tabla.split('.')
       await client.query(`create temp table carga on commit drop as select * from "${esquema}"."${tabla}" with no data`)
       await pipeline(Readable.from([csv]), client.query(copyFrom(`copy carga (${columnas.map((c) => `"${c}"`).join(', ')}) from stdin with (format csv, header)`)))
+      await client.query(`delete from "${esquema}"."${tabla}"`)
       const { rowCount } = await client.query(sqlInsertarDesdeTemporal(archivo.tabla, columnas))
       await client.query('drop table carga')
       resumen.push({ tabla: archivo.tabla, esperado: archivo.filas, cargado: rowCount })

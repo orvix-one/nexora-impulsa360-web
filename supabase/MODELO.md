@@ -8,8 +8,10 @@ Domain knowledge the schema and code do not state on their own. Columns, types a
 - **Categoría**: `comercio`, `tienda_barrio`, `transeunte`, `cliente_antiguo`. Agrupa los tipos de activación.
 - **Tipo de activación**: subtipo dentro de la categoría (`comercio`, `reactivacion*`, `limbo`, `no_habilitado`, `reimpresion_qr`, `transeunte`, `cliente_antiguo`). `limbo` es compartido por Comercio y Tienda de Barrio; se distinguen por `base_activacion`.
 - **Departamento > provincia > municipio**: división oficial (códigos INE: 2 + 2 + 2 dígitos, p.ej. `070101` Santa Cruz de la Sierra). Fuente: OCHA COD-AB (Ministerio de Desarrollo Rural y Tierras, 2024-09-16), 339 municipios. El código INE es la clave natural; `id` es interno.
-- **Plaza**: concepto del Banco Ganadero, no una división oficial. El banco la define y puede cambiarla (hoy Santa Cruz, mañana Montero). Un activador tiene una plaza base.
-- **Plaza temporal** (hoy): mezcla dos cosas distintas que se van a separar: **visita** (el activador viaja a otra plaza aprobada por el banco; puede dar viáticos al llegar a una meta) y **evento** (feria, mercado, universidad, campaña con puntos de activación).
+- **Plaza**: concepto del Banco Ganadero, no una división oficial. El banco la define y puede cambiarla (hoy Santa Cruz, mañana Montero). Un activador tiene una plaza base. Una plaza agrupa municipios reales (`plaza_municipios`); la geografía nunca apunta a la plaza.
+- **Ubicación de una activación**: el municipio sale del punto GPS (`trg_ubicar_activacion`, PostGIS) y `ciudad_activacion` es su nombre común. Nadie la escribe a mano: lo que mande la app se sobrescribe.
+- **Viaje**: un activador trabaja en otro municipio entre dos fechas (`viajes`, sin solaparse por activador).
+- **Lugar**: punto (lat, lon) con radio donde se asignan activadores por un rango de fechas u horas (`lugares`, `lugar_asignaciones`, una fila por activador; las creadas juntas comparten `lote_id`). Las asignaciones pueden solaparse.
 - **Equipo / líder / facturador**: un activador pertenece a un equipo de una plaza; el equipo tiene un líder y un facturador. Todo cambia en el tiempo y se guarda en historiales (`activador_equipo_historial`, `equipo_lider_historial`).
 - **Snapshot de organización**: al insertar una activación, `trg_snapshot_organizacion_activacion` copia equipo, líder, facturador y plaza vigentes en `created_at` a las columnas `*_registro`. Así los reportes históricos no cambian cuando la organización cambia. Solo el servidor las escribe.
 
@@ -26,7 +28,8 @@ Cada regla cita su fuente en el código.
 - **Fotos** (evidencia y Cash-In) por categoría y tipo: `impulsa360-mobile/lib/reglasFotografias.js`. Límite 6 MB / 12 MP.
 - **Roles**: `administrador`, `lider`, `activador`, `facturador`, `banco`. Un usuario puede tener varios en `activador_roles`. Portal: `administrador`, `lider`, `banco`; el líder ve solo su alcance (`server/alcanceLider.js`); `banco` ve todo. Un líder solo usa el formulario si `activadores.puede_activar`.
 - **Identidad**: `activadores.usuario_id = auth.uid()` para todo usuario móvil; RLS, RPC y rutas de Storage dependen de ello.
-- **Plaza temporal**: `activador_plaza_temporal` guarda ventanas `[inicio, fin)` sin solaparse por activador; `tipo_zona` ∈ universidad, feria, evento, campana, punto_temporal. Plaza efectiva de una activación: la temporal vigente en `created_at`, si no, la base.
+- **Viaje de una activación**: al insertar, `trg_vincular_viaje_y_lugar` toma el viaje vigente del activador en `created_at`, sin importar dónde cayó el punto. Viajes del mismo activador no se solapan, así que hay a lo sumo uno.
+- **Lugar de una activación**: al insertar, el mismo trigger toma el lugar asignado vigente más cercano, solo si el punto cae dentro de su radio. Si no hay, la activación queda solo con su municipio. Nunca se bloquea un registro.
 - **Fotos**: `foto_url` / `foto_cash_in` con prefijo `r2:` están en Cloudflare R2; sin prefijo, en el bucket privado de Supabase hasta que el cron nocturno las archive (`server/archivarFotos.js`). Acceso: dueño, administrador o líder del equipo vigente (`puede_leer_foto_activacion_equipo`).
 - **Notificaciones**: se marcan leídas por `notificaciones_destinatarios.id`; marcar una ya leída cuenta como éxito.
 - **Fechas**: todo `timestamptz` se guarda en UTC y se muestra en `America/La_Paz`. Para "hoy" en SQL usar `(now() at time zone 'America/La_Paz')::date`, nunca `created_at::date` (depende de la zona de la sesión). La app no envía `created_at`.

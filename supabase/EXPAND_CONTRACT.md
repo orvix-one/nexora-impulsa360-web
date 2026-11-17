@@ -11,3 +11,7 @@ La app no se actualiza sola: "versión mínima" significa que ya no queda en cam
 | fotos sin prefijo `r2:` y bucket de Supabase | R2 | `rg "storage\.from\(" App.js lib`; objetos en `storage.objects` | builds ≤ 1.0.34 ya no están en campo y el bucket está vacío |
 | `activaciones.tipo_tienda`, `tipo_comercio`, `reactivacion_comercio`, `estado_sync`, `creado_en` | — | `rg "<columna>"` en app y web | la app ya no las envía ni lee |
 | `activaciones.base_activacion` como fuente de la categoría | `activaciones.categoria` | `rg "inferActivationCategory\|base_activacion"` | la app envía `categoria` |
+| `activador_plaza_temporal`, `plaza_efectiva_activador`, `activaciones.plaza_efectiva_*`, `plaza_temporal_registro`, `plaza_temporal_asignacion_id` | `viajes`, `lugares`, `lugar_asignaciones` | `rg "plaza_temporal\|plaza_efectiva"` en app y web | la web deja de leerlos (se quitan en esta misma serie) |
+| `activaciones.es_plaza_temporal`, `plaza_temporal` | `viaje_id`, `lugar_id` | `rg "plaza_temporal"` en la app | la app ya no las envía en el upsert y no quedan builds viejos |
+| `activaciones.ciudad_activacion` escrita por la app | `municipio_id` (calculado del GPS) | `rg "ciudad_activacion"` en la app | la app ya no la envía |
+| tabla `activaciones_ciudad_previa` | — | — | se envió el reporte de la corrección |
