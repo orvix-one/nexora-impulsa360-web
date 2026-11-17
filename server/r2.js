@@ -74,6 +74,11 @@ export function createR2Storage(env, bucket = R2_FOTOS_BUCKET) {
       }
     },
 
+    async getBuffer(key) {
+      const result = await client.send(new GetObjectCommand({ Bucket: bucket, Key: key }))
+      return Buffer.from(await result.Body.transformToByteArray())
+    },
+
     async head(key) {
       try {
         const result = await client.send(new HeadObjectCommand({ Bucket: bucket, Key: key }))

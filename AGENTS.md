@@ -13,6 +13,7 @@
 - `npm test` (`node:test`, `tests/*.test.mjs`; one file: `node --test tests/<file>`), `npm run lint`, `npm run build`.
 - `npm run format:check` and lint are a baseline, not gates. Do not reformat files you are not changing.
 - CI is Vercel auto-deploying on push to `main`: run test, lint and build before pushing.
+- Manual runs of the nightly crons: `node scripts/respaldar-db.mjs` (DB backup to R2), `node scripts/archivar-fotos.mjs [--dry-run]` (photos Supabase → R2). DEV restore: see `supabase/README.md`.
 
 ## Docs to trust
 
