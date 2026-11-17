@@ -59,7 +59,7 @@ test('mercados usa la columna E y la ciudad se abrevia', () => {
 
 test('tienda de barrio usa la columna D y el tamaño', () => {
   const fila = aFilaYolopago(
-    { ...base, tamano_tienda: 'Mediana', tipo_activacion: 'reimpresion_qr', ciudad_activacion: 'La Paz' },
+    { ...base, categoria: 'tienda_barrio', tamano_tienda: 'Mediana', tipo_activacion: 'reimpresion_qr', ciudad_activacion: 'La Paz' },
     { urlEvidencia },
   )
   assert.equal(fila.tipoActivacion, 'Tiendas de barrio (Santa Cruz, La Paz, El Alto)')

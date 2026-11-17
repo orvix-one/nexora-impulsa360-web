@@ -1,6 +1,6 @@
 // @ts-check
 // Portal's own Excel export (internal vocabulary, grouped by activation category). Client-neutral: no YoloPago wording here.
-import { activationCategoryLabel } from '../activationEditing.js'
+import { activationCategoryLabel, inferActivationCategory } from '../activationEditing.js'
 import { neutralizeExportRow } from '../exportSafety.js'
 import { etiquetaCiudadActivacion } from '../plazas.js'
 import { nombreArchivoReporte } from './nombreArchivo.js'
@@ -14,15 +14,9 @@ const ENCABEZADO_FECHA = 'Fecha de la Activación'
 const tieneValor = (valor) => valor != null && String(valor).trim() !== ''
 const unir = (...partes) => partes.filter(Boolean).join(' - ')
 
-const normalizarTipo = (valor) => String(valor ?? '').trim().toLowerCase()
-  .normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[_-]+/g, ' ')
-
-const textoTipo = (fila) =>
-  [fila.tipo_activacion, fila.tipo_comercio, fila.tipo_tienda, fila.tamano_tienda].map(normalizarTipo).join(' ')
-
-const esTiendaBarrio = (fila) => /tienda|barrio/.test(textoTipo(fila))
-const esComercio = (fila) => textoTipo(fila).includes('comercio')
-const esTranseunte = (fila) => textoTipo(fila).includes('transeunte')
+const esTiendaBarrio = (fila) => inferActivationCategory(fila) === 'tienda_barrio'
+const esComercio = (fila) => inferActivationCategory(fila) === 'comercio'
+const esTranseunte = (fila) => inferActivationCategory(fila) === 'transeunte'
 
 const equipo = (fila) =>
   fila.equipo_nombre_registro || (fila.equipo_numero_registro ? `Equipo #${fila.equipo_numero_registro}` : '')

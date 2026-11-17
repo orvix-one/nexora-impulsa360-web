@@ -20,7 +20,7 @@ Vue SPA → `/api` (Express, one Vercel function in `gru1`) → Supabase. The AP
 - Lists are paginated on the server with filters in SQL. Only the detail endpoint signs photos and looks up emails.
 - Order is always `created_at desc, id asc`.
 - Select lists are static; no schema discovery at runtime. The schema is `supabase/migrations/20261029000000_baseline.sql` plus later migrations.
-- Photos are served through HMAC evidence links; the service-role key never reaches the client.
+- Photos are served through HMAC evidence links; the service-role key never reaches the client. New photos live in Cloudflare R2 (`r2:` prefix in `foto_url`/`foto_cash_in`); a nightly cron (`server/archivarFotos.js`) moves older ones out of the Supabase bucket.
 - Pure logic lives in `src/lib` and `server/*.js`; HTTP tests run the real app against `tests/helpers/fakeSupabase.mjs`.
 - Database changes need approval and go through `supabase/migrations/` (workflow in `supabase/README.md`). Never edit the schema in the SQL Editor.
 - Deploy is a push to `main` (Vercel): run test, lint and build first.

@@ -67,25 +67,11 @@ const normalizeKey = (value) => String(value ?? '')
   .replace(/[\u0300-\u036f]/g, '')
   .replace(/[\s-]+/g, '_')
 
+const CATEGORY_KEYS = ['comercio', 'tienda_barrio', 'transeunte', 'cliente_antiguo']
+
 export function inferActivationCategory(row = {}) {
-  const explicit = normalizeKey(row.tipo_grupo)
-  if (['comercio', 'tienda_barrio', 'transeunte', 'cliente_antiguo'].includes(explicit)) return explicit
-  if (['tienda', 'tiendas_barrio', 'tiendas_de_barrio'].includes(explicit)) return 'tienda_barrio'
-
-  const base = normalizeKey(row.base_activacion)
-  if (['comercio', 'tienda_barrio', 'transeunte', 'cliente_antiguo'].includes(base)) return base
-  // The app writes base 'none' for Comercio no_habilitado and reimpresion_qr
-  if (base === 'none' && !row.tamano_tienda && !row.tipo_tienda) return 'comercio'
-  if (row.tamano_tienda || row.tipo_tienda) return 'tienda_barrio'
-
-  const type = normalizeKey(row.tipo_activacion)
-  if (type === 'cliente_antiguo') return 'cliente_antiguo'
-  if (['transeunte', 'reactivacion_transeunte'].includes(type)) return 'transeunte'
-  if (['comercio', 'reactivacion_comercio', 'limbo'].includes(type) ||
-    row.tipo_comercio || row.rubro_comercio || row.rubro_comercio_otro || row.comercio_fuera_mercado != null) {
-    return 'comercio'
-  }
-  return ''
+  const category = normalizeKey(row.categoria ?? row.tipo_grupo)
+  return CATEGORY_KEYS.includes(category) ? category : ''
 }
 
 export function activationBaseFor(category, activationType) {
@@ -227,6 +213,7 @@ export function validateActivationEdit(values = {}, editReason = '', original = 
 export function activationClassificationUpdate(values = {}) {
   return {
     tipo_activacion: values.tipo_activacion,
+    categoria: values.tipo_grupo,
     base_activacion: values.base_activacion,
     es_reactivacion: values.es_reactivacion,
     tamano_tienda: values.tamano_tienda,

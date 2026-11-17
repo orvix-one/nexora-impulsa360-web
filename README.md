@@ -134,48 +134,9 @@ El modulo de capacidad toma como referencia por defecto:
   - Envio a usuario especifico.
   - Historial de envios con total/leidas/pendientes.
 
-## Supabase por Etapas
+## Base de datos
 
-### Etapa 1 (obligatoria ahora)
-
-1. Abre `SQL Editor` en Supabase.
-2. Ejecuta el contenido de `supabase/notificaciones.sql`.
-3. Verifica que existan tablas:
-   - `public.notificaciones`
-   - `public.notificaciones_destinatarios`
-4. Verifica rapidamente que la estructura responde:
-
-```sql
-select count(*) as total_notificaciones from public.notificaciones;
-select count(*) as total_destinatarios from public.notificaciones_destinatarios;
-```
-
-5. Verifica alineacion con movil (`id` por destinatario):
-
-```sql
-select id, notificacion_id, usuario_id, leida_at
-from public.notificaciones_destinatarios
-limit 5;
-```
-
-### Etapa 1.1 (validacion funcional web)
-
-1. En la web, entra a `/notificaciones`.
-2. Inicia sesion como administrador.
-3. Envia una notificacion de prueba a `Todos`.
-4. Confirma en SQL:
-
-```sql
-select id, titulo, alcance, created_at
-from public.notificaciones
-order by created_at desc
-limit 5;
-```
-
-### Etapa 2 (para app movil)
-
-El mismo SQL ya incluye politicas RLS para que cada usuario autenticado vea solo sus notificaciones y pueda marcar sus lecturas.
-No requiere cambios extra de backend para el modulo web.
+Esquema, migraciones y flujo de trabajo: `supabase/README.md`. Modelo y reglas de dominio: `supabase/MODELO.md`.
 
 ## Despliegue en Vercel (Frontend + API)
 
@@ -195,21 +156,6 @@ No requiere cambios extra de backend para el modulo web.
 4. Deploy.
 
 Con eso no necesitas ejecutar la API en terminal para crear/editar/eliminar usuarios.
-
-## Opcional: Tamano real de BD
-
-Si quieres que el indicador de BD muestre tamano real (y no solo limite), crea esta funcion en Supabase SQL Editor:
-
-```sql
-create or replace function public.get_database_size_bytes()
-returns bigint
-language sql
-security definer
-set search_path = public, pg_catalog
-as $$
-  select pg_database_size(current_database())::bigint;
-$$;
-```
 
 ## Nota de routing SPA en Vercel
 

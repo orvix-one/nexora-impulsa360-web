@@ -6,7 +6,7 @@
 - HTTP: client calls only via `src/lib/api.js` (`apiRequest`); server auth only via `authenticate`/`requireAdmin` (Bearer + `getClaims`).
 - API: Express 5 in `server/app.js`, deployed as one Vercel function (`api/index.js`, `/api/*` rewrite, region `gru1`, next to Supabase). Locally: `npm run dev:api` + `npm run dev`.
 - Supabase backend. The API uses the service-role key, so RLS does not apply: scope access by hand. Portal roles: `administrador`, `lider`, `banco`; admin = `req.user.isAdmin` (`roles` includes `administrador`).
-- The mobile app (`../impulsa360`) writes to the same database.
+- The mobile app (`../impulsa360-mobile`) writes to the same database.
 
 ## Commands
 
@@ -17,7 +17,8 @@
 ## Docs to trust
 
 - `ARCHITECTURE.md` (layout, practices).
-- `supabase/README.md` (migration workflow) and `supabase/migrations/` (baseline of prod, 2026-10-29, plus later migrations). `supabase/legacy/` is pre-baseline history.
+- `supabase/README.md` (migration workflow) and `supabase/migrations/` (baseline of prod, 2026-10-29, plus later migrations).
+- `supabase/MODELO.md` (domain glossary and rules) and `supabase/EXPAND_CONTRACT.md` (deprecated objects kept for installed app builds). When touching code that reads or writes the DB, check the latter: propose the contract if a row's condition is met, add a row if your change leaves something unused.
 
 ## Conventions
 

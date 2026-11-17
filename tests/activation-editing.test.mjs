@@ -63,7 +63,7 @@ test('cambia subtipo dentro de la categoría y deriva base compatible', () => {
 
 test('precarga nomenclatura histórica sin sobrescribirla', () => {
   const historical = {
-    tipo_grupo: 'Tiendas de Barrio', tipo_activacion: 'tipo_historico', tamano_tienda: 'P',
+    tipo_grupo: 'tienda_barrio', tipo_activacion: 'tipo_historico', tamano_tienda: 'P',
     tipo_comercio: 'clasificacion_anterior', rubro_comercio: 'Rubro anterior',
   }
   assert.equal(inferActivationCategory(historical), 'tienda_barrio')
@@ -115,7 +115,7 @@ test('el payload persistente excluye la categoría derivada tipo_grupo', () => {
 })
 
 const clienteAntiguo = {
-  tipo_activacion: 'cliente_antiguo', base_activacion: 'cliente_antiguo',
+  categoria: 'cliente_antiguo', tipo_activacion: 'cliente_antiguo', base_activacion: 'cliente_antiguo',
   tamano_tienda: null, tipo_tienda: null, tipo_comercio: null,
   rubro_comercio: null, rubro_comercio_otro: null, comercio_fuera_mercado: null,
   telefono_cliente: '70000000',
@@ -129,10 +129,10 @@ test('cliente antiguo es la cuarta categoría con su tipo', () => {
   assert.equal(ACTIVATION_TYPES_BY_CATEGORY.cliente_antiguo.some((tipo) => tipo.key === 'cliente_antiguo'), true)
 })
 
-test('reconoce cliente antiguo por tipo_activacion y por base_activacion', () => {
-  assert.equal(inferActivationCategory({ tipo_activacion: 'cliente_antiguo' }), 'cliente_antiguo')
-  assert.equal(inferActivationCategory({ base_activacion: 'cliente_antiguo' }), 'cliente_antiguo')
+test('la categoría sale de la columna categoria, no de otros campos', () => {
+  assert.equal(inferActivationCategory({ categoria: 'cliente_antiguo' }), 'cliente_antiguo')
   assert.equal(inferActivationCategory({ tipo_grupo: 'Cliente Antiguo' }), 'cliente_antiguo')
+  assert.equal(inferActivationCategory({ tipo_activacion: 'cliente_antiguo', base_activacion: 'cliente_antiguo' }), '')
   assert.equal(activationBaseFor('cliente_antiguo', 'cliente_antiguo'), 'cliente_antiguo')
   assert.equal(isGeneralCommerce('cliente_antiguo', 'cliente_antiguo'), false)
 })
@@ -240,9 +240,9 @@ test('créditos/remesas siguen la misma matriz que la app móvil', () => {
   }
 })
 
-test('sin tipo_grupo la elegibilidad usa la categoría inferida de la fila', () => {
-  assert.equal(isCreditosEligible({ base_activacion: 'limbo', tipo_activacion: 'limbo' }), false)
-  assert.equal(isRemesasEligible({ base_activacion: 'tienda_barrio', tipo_activacion: 'limbo' }), true)
+test('sin tipo_grupo la elegibilidad usa la categoría de la fila', () => {
+  assert.equal(isCreditosEligible({ categoria: 'comercio', tipo_activacion: 'limbo' }), false)
+  assert.equal(isRemesasEligible({ categoria: 'tienda_barrio', tipo_activacion: 'limbo' }), true)
   assert.equal(isCreditosEligible({ tipo_activacion: 'desconocido' }), false)
   assert.equal(isRemesasEligible(), false)
 })
@@ -306,15 +306,19 @@ test('la segunda foto se llama Reporte solo en no habilitado de tienda de barrio
   assert.equal(secondaryPhotoLabel(), 'Cash-In')
 })
 
-test('infiere Comercio para base none (no_habilitado y reimpresion_qr de Comercio)', () => {
-  assert.equal(inferActivationCategory({ base_activacion: 'none', tipo_activacion: 'no_habilitado' }), 'comercio')
-  assert.equal(inferActivationCategory({ base_activacion: 'none', tipo_activacion: 'reimpresion_qr' }), 'comercio')
-  assert.equal(inferActivationCategory({ base_activacion: 'none', tipo_activacion: 'reimpresion_qr', tamano_tienda: 'Mediana' }), 'tienda_barrio')
+test('una fila sin categoria no tiene categoría', () => {
+  assert.equal(inferActivationCategory({ base_activacion: 'none', tipo_activacion: 'no_habilitado' }), '')
 })
 
 test('activationCategoryLabel etiqueta la categoría para exportaciones', () => {
-  assert.equal(activationCategoryLabel({ base_activacion: 'none', tipo_activacion: 'reimpresion_qr' }), 'Comercio')
-  assert.equal(activationCategoryLabel({ base_activacion: 'tienda_barrio', tipo_activacion: 'comercio', tamano_tienda: 'Grande' }), 'Tienda de barrio')
-  assert.equal(activationCategoryLabel({ base_activacion: 'transeunte', tipo_activacion: 'transeunte' }), 'Transeúnte')
-  assert.equal(activationCategoryLabel({ base_activacion: 'cliente_antiguo', tipo_activacion: 'cliente_antiguo' }), 'Cliente antiguo')
+  assert.equal(activationCategoryLabel({ categoria: 'comercio' }), 'Comercio')
+  assert.equal(activationCategoryLabel({ categoria: 'tienda_barrio' }), 'Tienda de barrio')
+  assert.equal(activationCategoryLabel({ categoria: 'transeunte' }), 'Transeúnte')
+  assert.equal(activationCategoryLabel({ categoria: 'cliente_antiguo' }), 'Cliente antiguo')
+})
+
+test('la edición de clasificación escribe categoria junto con base_activacion', () => {
+  const update = activationClassificationUpdate({ tipo_grupo: 'comercio', tipo_activacion: 'limbo', base_activacion: 'limbo' })
+  assert.equal(update.categoria, 'comercio')
+  assert.equal(update.base_activacion, 'limbo')
 })
