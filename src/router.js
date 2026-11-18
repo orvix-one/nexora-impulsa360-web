@@ -33,10 +33,11 @@ const routes = [
     meta: { admin: true },
   },
   {
-    path: '/plazas',
-    component: () => import('./pages/PlazasPage.vue'),
+    path: '/yolopago',
+    component: () => import('./pages/YolopagoPage.vue'),
     meta: { admin: true },
   },
+  { path: '/plazas', redirect: '/yolopago' },
   {
     path: '/viajes',
     component: () => import('./pages/ViajesPage.vue'),

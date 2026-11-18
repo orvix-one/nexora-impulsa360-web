@@ -39,12 +39,16 @@ export function normalizarPlazaClave(value) {
     .replace(/[^a-z0-9]+/g, '')
 }
 
+const CONECTORES = new Set(['de', 'del', 'la', 'las', 'los', 'el', 'y'])
+
+// Names already cased (municipios from the DB) are kept; only legacy lowercase keys like 'santa_cruz' are rebuilt.
 function titleCase(value) {
-  return String(value ?? '')
-    .replace(/[_-]+/g, ' ')
-    .trim()
-    .toLocaleLowerCase('es')
-    .replace(/\b\p{L}/gu, (letter) => letter.toLocaleUpperCase('es'))
+  const texto = String(value ?? '').replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim()
+  if (texto !== texto.toLocaleLowerCase('es')) return texto
+  return texto
+    .split(' ')
+    .map((palabra, i) => (i > 0 && CONECTORES.has(palabra) ? palabra : palabra.charAt(0).toLocaleUpperCase('es') + palabra.slice(1)))
+    .join(' ')
 }
 
 export function nombreLegiblePlaza(value) {

@@ -14,3 +14,4 @@ La app no se actualiza sola: "versión mínima" significa que ya no queda en cam
 | `activaciones.es_plaza_temporal`, `plaza_temporal` | `viaje_id`, `lugar_id` | `rg "plaza_temporal"` en la app | builds ≤ 1.0.35 ya no están en campo |
 | `activaciones.ciudad_activacion` escrita por la app | `municipio_id` (calculado del GPS) | `rg "ciudad_activacion"` en la app | builds ≤ 1.0.35 ya no están en campo |
 | tabla `activaciones_ciudad_previa` | — | — | se envió el reporte de la corrección |
+| `plazas.es_ciudad_geografica`, `aliases` (catálogo de ciudades de la app) | `plaza_municipios` | `rg "es_ciudad_geografica"` en app y web | builds ≤ 1.0.36 ya no están en campo |

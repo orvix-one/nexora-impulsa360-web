@@ -2138,3 +2138,17 @@ button:disabled,
   color: #a12731;
 }
 
+.fila-inactiva {
+  opacity: 0.55;
+}
+
+.conversion-resumen {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.plazas-toolbar {
+  margin-bottom: 1rem;
+}

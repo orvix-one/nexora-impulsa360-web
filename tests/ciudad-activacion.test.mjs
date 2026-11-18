@@ -194,3 +194,9 @@ test('el filtro de ciudad agrupa los municipios por plaza y solo ofrece ciudades
   ])
   assert.match(cargaMetricasSource, /solicitar\('\/portal\/ciudades-por-plaza'\)/)
 })
+
+test('respeta tildes y eñes de los municipios y solo reconstruye claves en minúsculas', () => {
+  assert.equal(ciudadActivacion({ ciudad_activacion: 'Entre Ríos' }), 'Entre Ríos')
+  assert.equal(ciudadActivacion({ ciudad_activacion: 'Cuatro Cañadas' }), 'Cuatro Cañadas')
+  assert.equal(ciudadActivacion({ ciudad_activacion: 'san pedro de tiquina' }), 'San Pedro de Tiquina')
+})
