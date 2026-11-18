@@ -42,7 +42,7 @@ export function agruparPorPlaza(opciones) {
  * @property {string} param URL query parameter.
  * @property {string} label
  * @property {'fecha' | 'seleccion'} tipo
- * @property {'plazas' | 'activadores' | 'equipos' | 'lideres' | 'tipos'} [opciones] Option list of a select.
+ * @property {'plazas' | 'zonas' | 'activadores' | 'equipos' | 'lideres' | 'tipos'} [opciones] Option list of a select.
  * @property {string} [vacio] Label of the "no filter" option.
  * @property {boolean} [ocultarSinOpciones] Hide the control when its option list is empty.
  */
@@ -58,6 +58,14 @@ export const FILTROS = [
     tipo: 'seleccion',
     opciones: 'plazas',
     vacio: 'Todas',
+  },
+  {
+    key: 'zona',
+    param: 'zona',
+    label: 'Barrio / zona',
+    tipo: 'seleccion',
+    opciones: 'zonas',
+    vacio: 'Todos',
   },
   {
     key: 'activador',
@@ -99,7 +107,7 @@ const MAX_VALOR = 200
 
 /** @returns {Filtros} */
 export function filtrosVacios() {
-  return { desde: '', hasta: '', plaza: '', activador: '', tipo: '', lider: '', equipo: '' }
+  return { desde: '', hasta: '', plaza: '', zona: '', activador: '', tipo: '', lider: '', equipo: '' }
 }
 
 /** @param {Filtros} filtros */
@@ -136,10 +144,17 @@ export function sanearFiltros(filtros, opciones) {
   return saneados
 }
 
+/** @param {Activacion} item */
+export function zonaKey(item) {
+  const clave = normalizarPlazaClave(item.zona_activacion)
+  return clave ? `${plazaKey(item)}|${clave}` : ''
+}
+
 /** @param {Activacion} item @param {Contexto} ctx */
 export function claveFiltrable(item, ctx) {
   return {
     plaza: plazaKey(item),
+    zona: zonaKey(item),
     activador: activadorKey(item),
     tipo: tipoKey(item),
     lider: liderKey(item, ctx),
@@ -156,6 +171,7 @@ export function coincideFiltros(fecha, claves, filtros) {
   if (filtros.desde && (!fecha || fecha < filtros.desde)) return false
   if (filtros.hasta && (!fecha || fecha > filtros.hasta)) return false
   if (filtros.plaza && claves.plaza !== filtros.plaza) return false
+  if (filtros.zona && claves.zona !== filtros.zona) return false
   if (filtros.activador && claves.activador !== filtros.activador) return false
   if (filtros.tipo && claves.tipo !== filtros.tipo) return false
   if (filtros.lider && claves.lider !== filtros.lider) return false
@@ -188,6 +204,7 @@ export function integrantesRanking(ctx, filtros) {
 /** @param {Contexto} ctx */
 export function construirOpciones(ctx) {
   /** @type {Map<string, Opcion>} */ const plazas = new Map()
+  /** @type {Map<string, Opcion>} */ const zonas = new Map()
   /** @type {Map<string, Opcion>} */ const activadores = new Map()
   /** @type {Map<string, Opcion>} */ const tipos = new Map()
   /** @type {Map<string, Opcion>} */ const lideres = new Map()
@@ -195,6 +212,8 @@ export function construirOpciones(ctx) {
   for (const item of ctx.activaciones) {
     const plaza = plazaKey(item)
     if (!plazas.has(plaza)) plazas.set(plaza, { key: plaza, nombre: plazaEtiqueta(item) })
+    const zona = zonaKey(item)
+    if (zona && !zonas.has(zona)) zonas.set(zona, { key: zona, nombre: texto(item.zona_activacion), ciudad: plaza })
     const activador = activadorKey(item)
     if (!activadores.has(activador))
       activadores.set(activador, {
@@ -269,6 +288,7 @@ export function construirOpciones(ctx) {
   return {
     plazas: [...plazas.values()].sort((a, b) =>
       ordenGrupo(a.grupo).localeCompare(ordenGrupo(b.grupo), 'es') || a.nombre.localeCompare(b.nombre, 'es')),
+    zonas: ordenar(zonas.values()),
     activadores: ordenar(activadores.values()),
     tipos: ordenar(tipos.values()),
     lideres: ordenar(lideres.values()),

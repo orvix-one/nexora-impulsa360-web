@@ -12,7 +12,6 @@ import {
 import { isValidEmail, normalizeEmail, normalizeText } from '../lib/textUtils'
 import { useAuth } from '../lib/authStore'
 import { etiquetaCiudadActivacion } from '../lib/plazas'
-import { zonasParaCiudad } from '../lib/zonasActivacion'
 import { logClientError } from '../lib/logging'
 import { MIME_XLSX, descargarArchivo } from '../lib/reportes/descarga'
 import { generarExcel, nombreArchivoExcel } from '../lib/reportes/excel'
@@ -183,7 +182,7 @@ function etiquetaCampo(key, row = {}) {
     fecha_activacion: 'Fecha de activacion', nombres_cliente: 'Nombres del cliente',
     apellidos_cliente: 'Apellidos del cliente', ci_cliente: 'CI del cliente',
     telefono_cliente: 'Telefono del cliente', email_cliente: 'Correo del cliente',
-    ciudad_activacion: 'Ciudad de activacion', zona_activacion: 'Distrito o zona',
+    ciudad_activacion: 'Ciudad de activacion', zona_activacion: 'Barrio / zona', zona_fuente: 'Origen del barrio',
     plaza_base_registro: 'Plaza organizacional (base)',
     tipo_activacion: 'Subtipo', tipo_comercio: 'Tipo de comercio',
     tamano_tienda: 'Tamano de tienda', foto_url: 'Fotografia', descargo_app: 'Descargo la app',
@@ -194,7 +193,10 @@ function etiquetaCampo(key, row = {}) {
   return especiales[key] ?? key.replace(/_/g, ' ').replace(/^./, (letter) => letter.toUpperCase())
 }
 
+const ORIGEN_ZONA = { gps: 'GPS', elegida: 'Elegida por el activador', escrita: 'Escrita por el activador' }
+
 function formatearValor(value, key) {
+  if (key === 'zona_fuente') return ORIGEN_ZONA[value] ?? String(value)
   if (typeof value === 'boolean') return value ? 'Si' : 'No'
   if ((key.includes('fecha') || key.endsWith('_at')) && value) {
     if (key.endsWith('_at')) return formatCreatedAtBolivia(value)
@@ -209,7 +211,7 @@ function formatearValor(value, key) {
 }
 
 const seccionesDetalleConfig = [
-  { title: 'Datos generales', keys: ['fecha_activacion', 'impulsador', 'ciudad_activacion', 'plaza', 'zona_activacion'] },
+  { title: 'Datos generales', keys: ['fecha_activacion', 'impulsador', 'ciudad_activacion', 'plaza', 'zona_activacion', 'zona_fuente'] },
   { title: 'Plaza organizacional', keys: ['plaza_base_registro'] },
   { title: 'Datos del cliente', keys: ['nombres_cliente', 'apellidos_cliente', 'ci_cliente', 'telefono_cliente', 'email_cliente'] },
   { title: 'Informacion de la activacion', keys: ['tipo_activacion', 'descargo_app', 'registro', 'cash_in', 'cash_out', 'p2p', 'qr_fisico', 'respaldo', 'creditos', 'remesas'] },
@@ -317,7 +319,6 @@ const esActivacionComercio = computed(() => isGeneralCommerce(
   formularioEdicion.value.tipo_grupo,
   formularioEdicion.value.tipo_activacion,
 ))
-const zonasDisponibles = computed(() => zonasParaCiudad(formularioEdicion.value.plaza))
 const esTiendaBarrio = computed(() => formularioEdicion.value.tipo_grupo === 'tienda_barrio')
 const etiquetaFotoSecundaria = computed(() => secondaryPhotoLabel(activacionSeleccionada.value ?? {}))
 const mostrarCreditos = computed(() => isCreditosEligible(formularioEdicion.value) || formularioEdicion.value.creditos === true)
@@ -738,7 +739,7 @@ const exportarExcelYolopago = () => exportar('yolopago', async (ExcelJS, datos, 
               <label><span class="field-label">Telefono</span><input v-model="formularioEdicion.telefono_cliente" class="input-texto" inputmode="tel"></label>
               <label><span class="field-label">Correo</span><input v-model="formularioEdicion.email_cliente" type="email" class="input-texto"></label>
               <label><span class="field-label">Ciudad de activación (por GPS)</span><input :value="formularioEdicion.plaza" class="input-texto" disabled></label>
-              <label><span class="field-label">Distrito o zona</span><select v-if="zonasDisponibles.length" v-model="formularioEdicion.zona_activacion" class="input-texto"><option value="">Selecciona zona</option><option v-if="formularioEdicion.zona_activacion && !zonasDisponibles.includes(formularioEdicion.zona_activacion)" :value="formularioEdicion.zona_activacion">Histórico: {{ formularioEdicion.zona_activacion }}</option><option v-for="zona in zonasDisponibles" :key="zona" :value="zona">{{ zona }}</option></select><input v-else v-model="formularioEdicion.zona_activacion" class="input-texto"></label>
+              <label><span class="field-label">Barrio / zona</span><input v-model="formularioEdicion.zona_activacion" class="input-texto"></label>
               <label><span class="field-label">Categoría</span><select :value="formularioEdicion.tipo_grupo" class="input-texto" @change="cambiarCategoria"><option value="">Selecciona categoría</option><option v-for="categoria in ACTIVATION_CATEGORIES" :key="categoria.key" :value="categoria.key">{{ categoria.label }}</option></select></label>
               <label><span class="field-label">Subtipo</span><select :value="formularioEdicion.tipo_activacion" class="input-texto" :disabled="!formularioEdicion.tipo_grupo" @change="cambiarTipoActivacion"><option value="">Selecciona subtipo</option><option v-if="formularioEdicion.tipo_activacion && !tiposActivacionDisponibles.some((item) => item.key === formularioEdicion.tipo_activacion)" :value="formularioEdicion.tipo_activacion">Histórico: {{ formularioEdicion.tipo_activacion }}</option><option v-for="tipo in tiposActivacionDisponibles" :key="tipo.key" :value="tipo.key">{{ tipo.label }}</option></select></label>
               <label v-if="esTiendaBarrio"><span class="field-label">Tamaño de tienda</span><select v-model="formularioEdicion.tamano_tienda" class="input-texto"><option value="">Selecciona tamaño</option><option v-if="formularioEdicion.tamano_tienda && !STORE_SIZES.includes(formularioEdicion.tamano_tienda)" :value="formularioEdicion.tamano_tienda">Histórico: {{ formularioEdicion.tamano_tienda }}</option><option v-for="tamano in STORE_SIZES" :key="tamano" :value="tamano">{{ tamano }}</option></select></label>

@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
 import { agruparPorPlaza, FILTROS } from '../../lib/metrics/filtros'
 import { formatNumber } from '../../lib/metrics/formato'
 import { useMetricas } from '../../lib/metrics/useMetricas'
@@ -8,8 +8,17 @@ const { filtros, opciones, dashboard, datos, hayFiltros, limpiarFiltros } = useM
 
 const gruposCiudad = computed(() => agruparPorPlaza(opciones.value.plazas))
 
+const zonasCiudad = computed(() => opciones.value.zonas.filter((opcion) => opcion.ciudad === filtros.plaza))
+
+watch(() => filtros.plaza, () => { filtros.zona = '' })
+
 function visible(filtro) {
+  if (filtro.opciones === 'zonas') return Boolean(filtros.plaza) && zonasCiudad.value.length > 0
   return !filtro.ocultarSinOpciones || opciones.value[filtro.opciones].length > 0
+}
+
+function opcionesDe(filtro) {
+  return filtro.opciones === 'zonas' ? zonasCiudad.value : opciones.value[filtro.opciones]
 }
 </script>
 
@@ -44,7 +53,7 @@ function visible(filtro) {
           <select v-else v-model="filtros[filtro.key]" class="input-texto">
             <option value="">{{ filtro.vacio }}</option>
             <option
-              v-for="opcion in opciones[filtro.opciones]"
+              v-for="opcion in opcionesDe(filtro)"
               :key="opcion.key"
               :value="opcion.key"
             >

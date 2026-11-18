@@ -139,7 +139,7 @@ test('el listado, el detalle y las exportaciones del portal usan la misma ciudad
     componentSource.indexOf('const seccionesDetalleConfig = ['),
     componentSource.indexOf('\n]', componentSource.indexOf('const seccionesDetalleConfig = [')) + 2,
   )
-  assert.match(detalle, /keys: \['fecha_activacion', 'impulsador', 'ciudad_activacion', 'plaza', 'zona_activacion'\]/)
+  assert.match(detalle, /keys: \['fecha_activacion', 'impulsador', 'ciudad_activacion', 'plaza', 'zona_activacion', 'zona_fuente'\]/)
   assert.match(detalle, /keys: \['plaza_base_registro'\]/)
 
   assert.match(componentSource, /key === 'ciudad_activacion'\s*\?\s*etiquetaCiudadActivacion\(row\)/)
@@ -199,4 +199,22 @@ test('respeta tildes y eñes de los municipios y solo reconstruye claves en min�
   assert.equal(ciudadActivacion({ ciudad_activacion: 'Entre Ríos' }), 'Entre Ríos')
   assert.equal(ciudadActivacion({ ciudad_activacion: 'Cuatro Cañadas' }), 'Cuatro Cañadas')
   assert.equal(ciudadActivacion({ ciudad_activacion: 'san pedro de tiquina' }), 'San Pedro de Tiquina')
+})
+
+test('el filtro de barrio ofrece los barrios de cada ciudad y filtra por ciudad y barrio', async () => {
+  const { claveFiltrable, coincideFiltros, filtrosVacios } = await import('../src/lib/metrics/filtros.js')
+  const ctx = crearContexto({
+    activaciones: [
+      { id: 'a', ciudad_activacion: 'La Paz', zona_activacion: 'Chasquipampa' },
+      { id: 'b', ciudad_activacion: 'La Paz', zona_activacion: 'chasquipampa ' },
+      { id: 'c', ciudad_activacion: 'El Alto', zona_activacion: 'Chasquipampa' },
+      { id: 'd', ciudad_activacion: 'La Paz', zona_activacion: null },
+    ],
+    usuarios: [],
+  })
+  const { zonas } = construirOpciones(ctx)
+  assert.deepEqual(zonas.map((z) => [z.ciudad, z.nombre]), [['pkey:lapaz', 'Chasquipampa'], ['pkey:elalto', 'Chasquipampa']])
+  const filtros = { ...filtrosVacios(), plaza: 'pkey:lapaz', zona: zonas[0].key }
+  const coinciden = ctx.activaciones.filter((item) => coincideFiltros('', claveFiltrable(item, ctx), filtros)).map((item) => item.id)
+  assert.deepEqual(coinciden, ['a', 'b'])
 })

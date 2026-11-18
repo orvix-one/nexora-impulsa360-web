@@ -21,6 +21,7 @@ const COLUMNAS_TABLERO = [
   'fecha_activacion',
   'created_at',
   'ciudad_activacion',
+  'zona_activacion',
   'impulsador',
   'tipo_activacion',
   'tipo_comercio',

@@ -6,6 +6,7 @@ export const SELECT_METRICAS_ACTIVACIONES = [
   'fecha_activacion',
   'created_at',
   'ciudad_activacion',
+  'zona_activacion',
   'impulsador',
   'tipo_activacion',
   'base_activacion',

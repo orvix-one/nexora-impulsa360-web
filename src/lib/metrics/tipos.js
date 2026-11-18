@@ -9,6 +9,7 @@
  * @property {string | null} [fecha_activacion]
  * @property {string | null} [created_at]
  * @property {string | null} [ciudad_activacion]
+ * @property {string | null} [zona_activacion]
  * @property {string | null} [tipo_activacion] Subtype shown in the app (comercio, limbo, transeunte, …).
  * @property {string | null} [base_activacion] Group shown in the app (tienda_barrio, comercio, transeunte, cliente_antiguo).
  * @property {string | null} [tipo_comercio]
@@ -48,6 +49,7 @@
  * @property {string} desde YYYY-MM-DD or ''.
  * @property {string} hasta YYYY-MM-DD or ''.
  * @property {string} plaza Key `pkey:<clave>` / 'none' or ''.
+ * @property {string} zona Key `<plaza key>|<barrio>` or ''; only offered once a city is chosen.
  * @property {string} activador Key `uid:<id>` / 'none' or ''.
  * @property {string} tipo Normalized tipo key or ''.
  * @property {string} lider Key `lid:<id>` or ''.
@@ -67,6 +69,7 @@
  * @property {string} key
  * @property {string} nombre
  * @property {string} [grupo] Client plaza that groups a city option.
+ * @property {string} [ciudad] City key a barrio option belongs to.
  */
 
 /**
