@@ -91,7 +91,6 @@ onMounted(cargarViajes)
         <h2 class="subtitulo subtitulo-inline">Viajes</h2>
         <div class="toolbar-actions">
           <span class="meta-pill">{{ visibles.length }} visibles</span>
-          <button class="boton" :disabled="cargando" @click="cargarViajes">Recargar</button>
           <button class="boton boton-primario" @click="abrirNuevo">Nuevo viaje</button>
         </div>
       </div>

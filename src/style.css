@@ -569,7 +569,6 @@ button:disabled,
 
 .activaciones-table-wrap {
   height: clamp(360px, 62vh, 700px);
-  scrollbar-gutter: stable both-edges;
 }
 
 .activaciones-resumen-wrap .tabla-activaciones {
@@ -597,8 +596,7 @@ button:disabled,
 }
 
 .modulo-table-wrap {
-  height: clamp(300px, 56vh, 620px);
-  scrollbar-gutter: stable both-edges;
+  max-height: clamp(300px, 62vh, 680px);
 }
 
 .tabla-activaciones,
@@ -624,7 +622,7 @@ button:disabled,
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  padding: 0.7rem 0.7rem;
+  padding: 0.75rem 0.8rem;
   border-bottom: 1px solid rgba(171, 194, 216, 0.35);
   text-align: left;
 }
@@ -632,7 +630,7 @@ button:disabled,
 .tabla-activaciones td,
 .tabla-impulsadores td,
 .tabla-usuarios td {
-  padding: 0.65rem 0.7rem;
+  padding: 0.7rem 0.8rem;
   border-bottom: 1px solid #dce8f4;
   white-space: nowrap;
   max-width: 420px;
@@ -2136,6 +2134,140 @@ button:disabled,
 .viaje-cancelado {
   background: #fde8ea;
   color: #a12731;
+}
+
+.mapa-lugar {
+  height: 400px;
+  border-radius: 12px;
+  border: 1px solid var(--ru-border);
+}
+
+.detalle-section > .mapa-lugar {
+  margin-top: 0.75rem;
+}
+
+.selector-radio {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.selector-radio-cabecera {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.selector-radio input[type='range'] {
+  width: 100%;
+  accent-color: var(--ru-primary);
+}
+
+.lugares-pestanas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.editor-lugar {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.detalle-section .lugares-pestanas {
+  margin-bottom: 0.75rem;
+}
+
+
+.fila-clic {
+  cursor: pointer;
+}
+
+.fila-evento-en_curso td:first-child {
+  box-shadow: inset 4px 0 0 var(--ru-success);
+}
+
+.fila-evento-programado td:first-child {
+  box-shadow: inset 4px 0 0 var(--ru-primary);
+}
+
+.fila-evento-finalizado,
+.fila-evento-cancelado {
+  color: var(--ru-ink-soft);
+}
+
+.fechas-evento {
+  display: grid;
+  grid-template-columns: 4rem minmax(0, 1.4fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+}
+
+.interruptor {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.interruptor input {
+  width: 1.1rem;
+  height: 1.1rem;
+  accent-color: var(--ru-primary);
+}
+
+.lugar-elegir {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+}
+
+.lugar-elegir .selector-buscable {
+  flex: 1;
+}
+
+.boton-enlace {
+  margin-top: 0.5rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ru-primary-strong);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.accion-izquierda {
+  margin-right: auto;
+}
+
+.fila-clic:hover td {
+  background: var(--ru-surface-soft);
+}
+
+.evento-datos {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.75rem;
+  margin: 0;
+}
+
+.evento-datos dt {
+  color: var(--ru-ink-soft);
+  font-size: 0.8rem;
+}
+
+.evento-datos dd {
+  margin: 0.15rem 0 0;
+  font-weight: 600;
+}
+
+.evento-activadores {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  list-style: none;
 }
 
 .fila-inactiva {

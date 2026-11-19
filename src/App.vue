@@ -32,6 +32,7 @@ watch(profile, (value) => {
           <router-link to="/equipos">Equipos</router-link>
           <router-link to="/yolopago">Yolopago</router-link>
           <router-link to="/viajes">Viajes</router-link>
+          <router-link to="/eventos">Eventos</router-link>
           <router-link to="/notificaciones">Notificaciones</router-link>
           <router-link to="/capacidad">Capacidad</router-link>
         </template>

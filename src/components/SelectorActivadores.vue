@@ -2,7 +2,10 @@
 import { computed, ref } from 'vue'
 import { containsNormalized } from '../lib/textUtils'
 
-const props = defineProps({ opciones: { type: Array, required: true } })
+const props = defineProps({
+  opciones: { type: Array, required: true },
+  placeholder: { type: String, default: 'Buscar activador' },
+})
 const seleccion = defineModel({ type: Array, default: () => [] })
 const texto = ref('')
 
@@ -17,7 +20,7 @@ function alternar(id, marcado) {
 <template>
   <div class="selector-buscable">
     <div class="selector-cabecera">
-      <input v-model="texto" class="input-texto" placeholder="Buscar activador">
+      <input v-model="texto" class="input-texto" :placeholder="placeholder">
       <span class="meta-pill">{{ seleccion.length }} seleccionados</span>
     </div>
     <ul class="selector-lista">

@@ -14,6 +14,8 @@ import { SELECT_LISTADO_ACTIVACIONES, parsearPagina } from './activacionesListad
 import { parsearAliasesPlaza } from '../src/lib/plazas.js'
 import { cargarActivacionesMetricas } from './metricasActivaciones.js'
 import { nombresMunicipios, registrarRutasViajes } from './viajes.js'
+import { registrarRutasLugares } from './lugares.js'
+import { registrarRutasEventos } from './eventos.js'
 import { registrarRutasPlazaMunicipios } from './plazaMunicipios.js'
 import {
   activationClassificationUpdate,
@@ -1455,6 +1457,8 @@ export function createAdminApiApp({
   })
 
   registrarRutasViajes(app, { adminSupabase, asyncRoute, jsonError })
+  registrarRutasLugares(app, { adminSupabase, asyncRoute, jsonError })
+  registrarRutasEventos(app, { adminSupabase, asyncRoute, jsonError })
   registrarRutasPlazaMunicipios(app, { adminSupabase, asyncRoute, jsonError, requireAdminReauthentication })
 
   app.get(
