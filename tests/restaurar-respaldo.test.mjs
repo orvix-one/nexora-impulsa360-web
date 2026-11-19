@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { ANONIMIZACION, columnasDeCsv, sqlInsertarDesdeTemporal, tablasACargar, validarDestinoDev } from '../scripts/restaurar-respaldo-en-dev.mjs'
+import { ANONIMIZACION, columnasDeCsv, migracionesHasta, sqlInsertarDesdeTemporal, tablasACargar, validarDestinoDev } from '../scripts/restaurar-respaldo-en-dev.mjs'
 
 const PROD = 'postgresql://postgres.prodref:secreto@aws-0-sa-east-1.pooler.supabase.com:5432/postgres'
 const DEV = 'postgresql://postgres.devref:secreto@aws-1-sa-east-1.pooler.supabase.com:5432/postgres'
@@ -31,4 +31,12 @@ test('cubre toda la PII de clientes de activaciones', () => {
 
 test('lee el encabezado del CSV del respaldo', () => {
   assert.deepEqual(columnasDeCsv(Buffer.from('id,"nombre",x\n1,a,b\n')), ['id', 'nombre', 'x'])
+})
+
+test('aplica las migraciones hasta la version del respaldo, en orden', () => {
+  const archivos = ['20261118195026_zonas.sql', 'README.md', '20261029000000_baseline.sql', '20261119154441_eventos.sql']
+  assert.deepEqual(migracionesHasta(archivos, '20261118195026'), [
+    { archivo: '20261029000000_baseline.sql', version: '20261029000000', nombre: 'baseline' },
+    { archivo: '20261118195026_zonas.sql', version: '20261118195026', nombre: 'zonas' },
+  ])
 })

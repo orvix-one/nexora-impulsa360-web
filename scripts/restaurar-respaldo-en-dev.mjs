@@ -1,7 +1,7 @@
 // Restores a nightly prod backup into DEV with client PII replaced, at the backup's schema version, so pending migrations can be tested on real data.
 // Usage: node scripts/restaurar-respaldo-en-dev.mjs [--fecha YYYY-MM-DD]   (then: supabase db push with .env.dev). Run again to roll DEV back.
 import { execFileSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { gunzipSync } from 'node:zlib'
 import dotenv from 'dotenv'
 import pg from 'pg'
@@ -12,6 +12,7 @@ import { createR2BackupStorage } from '../server/r2.js'
 import { RESPALDO_DB_PREFIX, RESPALDO_ESTADO_KEY } from '../server/respaldoDb.js'
 import { pathToFileURL } from 'node:url'
 
+const MIGRACIONES_DIR = 'supabase/migrations'
 const quoteIdent = (name) => `"${String(name).replaceAll('"', '""')}"`
 
 /** Deterministic replacements: the same CI or phone maps to the same fake value, so the 60-day rule still matches. */
@@ -59,6 +60,17 @@ export function sqlInsertarDesdeTemporal(tabla, columnas) {
   return `insert into ${destino} (${lista}) overriding system value select ${valores} from carga`
 }
 
+/**
+ * Migration files up to the backup's schema version, oldest first.
+ * @param {string[]} archivos @param {string} version
+ */
+export function migracionesHasta(archivos, version) {
+  return archivos
+    .filter((archivo) => /^\d{14}_.+\.sql$/.test(archivo) && archivo.slice(0, 14) <= version)
+    .sort()
+    .map((archivo) => ({ archivo, version: archivo.slice(0, 14), nombre: archivo.slice(15, -4) }))
+}
+
 /** @param {Buffer} csv */
 export function columnasDeCsv(csv) {
   const fin = csv.indexOf(10)
@@ -79,6 +91,35 @@ async function conectar(devUrl) {
   return client
 }
 
+// PostGIS caches its OIDs per backend and the pooler reuses backends, so one that loaded the extension before the reset dropped it fails spatial index lookups; each migration starts with no other backend alive.
+async function cerrarOtrosBackends(devUrl) {
+  const client = await conectar(devUrl)
+  try {
+    await client.query('select pg_terminate_backend(pid) from pg_stat_activity where datname = current_database() and usename = current_user and pid <> pg_backend_pid()')
+    await client.query('select pg_terminate_backend(pg_backend_pid())').catch(() => {})
+  } finally {
+    await client.end().catch(() => {})
+  }
+}
+
+async function aplicarMigracion(devUrl, { archivo, version, nombre }) {
+  const sql = readFileSync(`${MIGRACIONES_DIR}/${archivo}`, 'utf8')
+  await cerrarOtrosBackends(devUrl)
+  const client = await conectar(devUrl)
+  try {
+    await client.query('begin')
+    await client.query(sql)
+    await client.query('insert into supabase_migrations.schema_migrations (version, name, statements) values ($1, $2, $3)', [version, nombre, [sql]])
+    await client.query('commit')
+    console.log(`Aplicada ${archivo}`)
+  } catch (error) {
+    await client.query('rollback').catch(() => {})
+    throw new Error(`${archivo}: ${error.message}`)
+  } finally {
+    await client.end()
+  }
+}
+
 async function restaurar(args) {
   const prodEnv = dotenv.parse(readFileSync('.env'))
   const devUrl = dotenv.parse(readFileSync('.env.dev')).DB_URL
@@ -93,8 +134,10 @@ async function restaurar(args) {
 
   const prueba = await conectar(devUrl)
   await prueba.end()
+  const migraciones = migracionesHasta(readdirSync(MIGRACIONES_DIR), manifest.ultima_migracion)
   console.log(`Reseteando DEV a la migración ${manifest.ultima_migracion} (respaldo ${fecha})…`)
-  execFileSync('supabase', ['db', 'reset', '--db-url', devUrl, '--version', manifest.ultima_migracion, '--no-seed', '--yes'], { stdio: 'inherit' })
+  execFileSync('supabase', ['db', 'reset', '--db-url', devUrl, '--version', migraciones[0].version, '--no-seed', '--yes'], { stdio: 'inherit' })
+  for (const migracion of migraciones.slice(1)) await aplicarMigracion(devUrl, migracion)
 
   const client = await conectar(devUrl)
   const resumen = []
@@ -108,7 +151,12 @@ async function restaurar(args) {
       await client.query(`create temp table carga on commit drop as select * from "${esquema}"."${tabla}" with no data`)
       await pipeline(Readable.from([csv]), client.query(copyFrom(`copy carga (${columnas.map((c) => `"${c}"`).join(', ')}) from stdin with (format csv, header)`)))
       await client.query(`delete from "${esquema}"."${tabla}"`)
-      const { rowCount } = await client.query(sqlInsertarDesdeTemporal(archivo.tabla, columnas))
+      const { rows: generadas } = await client.query(
+        `select column_name from information_schema.columns where table_schema = $1 and table_name = $2 and is_generated = 'ALWAYS'`,
+        [esquema, tabla],
+      )
+      const calculadas = new Set(generadas.map((fila) => fila.column_name))
+      const { rowCount } = await client.query(sqlInsertarDesdeTemporal(archivo.tabla, columnas.filter((c) => !calculadas.has(c))))
       await client.query('drop table carga')
       resumen.push({ tabla: archivo.tabla, esperado: archivo.filas, cargado: rowCount })
     }

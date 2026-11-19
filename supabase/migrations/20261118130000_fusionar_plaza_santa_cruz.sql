@@ -8,6 +8,10 @@ declare
 begin
   select id into v_origen from public.plazas where nombre = 'Santa Cruz de la Sierra';
   select id into v_destino from public.plazas where nombre = 'Santa Cruz';
+  -- An empty database (DEV rebuilt from migrations before loading a backup) has neither plaza.
+  if v_origen is null and v_destino is null then
+    return;
+  end if;
   if v_origen is null or v_destino is null then
     raise exception 'No se encontraron las plazas "Santa Cruz de la Sierra" y "Santa Cruz".';
   end if;
