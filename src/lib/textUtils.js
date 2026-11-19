@@ -24,3 +24,7 @@ export function normalizeEmail(value) {
 export function isValidEmail(value) {
   return EMAIL_REGEX.test(normalizeEmail(value))
 }
+
+export function contarRegistros(total) {
+  return total === 1 ? '1 registro' : `${total} registros`
+}

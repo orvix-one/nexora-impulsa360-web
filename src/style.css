@@ -2245,6 +2245,18 @@ button:disabled,
   background: var(--ru-surface-soft);
 }
 
+.nota-inhabilitado {
+  display: block;
+  color: #b8434d;
+  font-size: 0.78rem;
+  font-weight: 500;
+}
+
+.selector-rol {
+  color: var(--ru-ink);
+  cursor: pointer;
+}
+
 .evento-datos {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));

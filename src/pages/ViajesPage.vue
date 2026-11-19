@@ -5,6 +5,7 @@ import { notifyError, notifySuccess, notifyWarning, requestConfirmation } from '
 import {
   activadoresElegibles, ESTADOS_VIAJE, etiquetaEstadoViaje, fechaHoraBolivia, filtrarViajes, opcionesMunicipio,
 } from '../lib/viajes'
+import { contarRegistros } from '../lib/textUtils'
 import SelectorActivadores from '../components/SelectorActivadores.vue'
 import SelectorBuscable from '../components/SelectorBuscable.vue'
 
@@ -90,7 +91,7 @@ onMounted(cargarViajes)
       <div class="toolbar-line">
         <h2 class="subtitulo subtitulo-inline">Viajes</h2>
         <div class="toolbar-actions">
-          <span class="meta-pill">{{ visibles.length }} visibles</span>
+          <span class="meta-pill">{{ contarRegistros(visibles.length) }}</span>
           <button class="boton boton-primario" @click="abrirNuevo">Nuevo viaje</button>
         </div>
       </div>

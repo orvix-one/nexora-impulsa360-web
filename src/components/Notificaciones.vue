@@ -3,7 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { apiRequest } from '../lib/api'
 import { useAuth } from '../lib/authStore'
 import { notifyError, notifySuccess, notifyWarning } from '../lib/feedback'
-import { containsNormalized } from '../lib/textUtils'
+import { containsNormalized, contarRegistros } from '../lib/textUtils'
 
 const { isAdmin } = useAuth()
 const initializing = ref(true)
@@ -277,7 +277,7 @@ onMounted(async () => {
       <div class="toolbar-line">
         <h2 class="subtitulo subtitulo-inline">Historial de Envios</h2>
         <div class="toolbar-actions">
-          <span class="meta-pill">{{ notificacionesFiltradas.length }} visibles</span>
+          <span class="meta-pill">{{ contarRegistros(notificacionesFiltradas.length) }}</span>
           <button class="boton" @click="cargarNotificaciones">Recargar</button>
         </div>
       </div>

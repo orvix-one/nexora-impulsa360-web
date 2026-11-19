@@ -6,7 +6,7 @@ import {
   ESTADOS_EVENTO, etiquetaEstadoEvento, fechaFinEvento, fechaInicioEvento, filtrarEventos, opcionesLugar, RADIO_INICIAL, rangoEvento, SIN_LUGAR,
 } from '../lib/eventos'
 import { activadoresElegibles } from '../lib/viajes'
-import { containsNormalized } from '../lib/textUtils'
+import { containsNormalized, contarRegistros } from '../lib/textUtils'
 import EditorLugar from '../components/EditorLugar.vue'
 import MapaLugar from '../components/MapaLugar.vue'
 import SelectorActivadores from '../components/SelectorActivadores.vue'
@@ -188,6 +188,7 @@ onMounted(cargar)
           <button class="boton" :class="{ 'boton-primario': pestana === 'lugares' }" role="tab" @click="pestana = 'lugares'">Lugares guardados</button>
         </div>
         <div class="toolbar-actions">
+          <span class="meta-pill">{{ contarRegistros(pestana === 'eventos' ? eventosVisibles.length : lugaresVisibles.length) }}</span>
           <button v-if="pestana === 'eventos'" class="boton boton-primario" @click="abrirNuevo">Nuevo evento</button>
         </div>
       </div>

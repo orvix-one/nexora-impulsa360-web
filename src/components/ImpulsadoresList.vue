@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { apiRequest } from '../lib/api'
-import { containsNormalized } from '../lib/textUtils'
+import { containsNormalized, contarRegistros } from '../lib/textUtils'
 import { notifyError, notifyInfo, notifySuccess } from '../lib/feedback'
 import { deduplicarPlazas, mismaPlaza, nombreLegiblePlaza } from '../lib/plazas'
 import { neutralizeExportRow } from '../lib/exportSafety'
@@ -174,7 +174,7 @@ onMounted(async () => {
     </div>
 
     <div class="toolbar-line">
-      <span class="meta-pill">{{ impulsadoresFiltrados.length }} visibles</span>
+      <span class="meta-pill">{{ contarRegistros(impulsadoresFiltrados.length) }}</span>
       <button type="button" class="boton-exportar" :disabled="loading || exportandoExcel || !impulsadoresFiltrados.length" @click="exportarImpulsadoresExcel">{{ exportandoExcel ? 'Generando Excel...' : 'Exportar Excel' }}</button>
     </div>
 

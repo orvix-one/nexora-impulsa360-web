@@ -9,7 +9,7 @@ import {
   notifyWarning,
   requestPasswordConfirmation,
 } from '../lib/feedback'
-import { isValidEmail, normalizeEmail, normalizeText } from '../lib/textUtils'
+import { contarRegistros, isValidEmail, normalizeEmail, normalizeText } from '../lib/textUtils'
 import { useAuth } from '../lib/authStore'
 import { etiquetaCiudadActivacion } from '../lib/plazas'
 import { logClientError } from '../lib/logging'
@@ -674,7 +674,7 @@ const exportarExcelYolopago = () => exportar('yolopago', async (ExcelJS, datos, 
         <button type="button" class="boton-exportar boton-exportar-excel" :disabled="exportandoExcel || deletingActivationId || !total" @click="exportarExcel">Exportar Excel</button>
         <button type="button" class="boton-exportar boton-exportar-yolopago" :disabled="exportandoExcel || deletingActivationId || !total" @click="exportarExcelYolopago">Exportar Excel Yolopago</button>
       </div>
-      <span class="meta-pill">{{ loading ? 'Cargando...' : `${total} registros` }}</span>
+      <span class="meta-pill">{{ loading ? 'Cargando...' : contarRegistros(total) }}</span>
     </div>
 
     <p v-if="loading && filas.length === 0" class="panel-empty">Cargando activaciones...</p>

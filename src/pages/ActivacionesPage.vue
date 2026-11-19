@@ -3,6 +3,7 @@ import { onMounted, ref } from 'vue'
 import ActivacionesTable from '../components/ActivacionesTable.vue'
 import { fetchActivacionesPagina } from '../lib/activacionesService'
 import { logClientError } from '../lib/logging'
+import { contarRegistros } from '../lib/textUtils'
 
 const PAGE_SIZE = 50
 
@@ -68,7 +69,7 @@ onMounted(cargar)
       </p>
       <div class="meta-row">
         <span class="meta-pill">
-          {{ loading ? 'Sincronizando...' : `${total} registros` }}
+          {{ loading ? 'Sincronizando...' : contarRegistros(total) }}
         </span>
       </div>
     </header>

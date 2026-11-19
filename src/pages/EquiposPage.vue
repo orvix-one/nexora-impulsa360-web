@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { apiRequest } from '../lib/api'
 import { notifyError, notifySuccess, notifyWarning, requestPasswordConfirmation } from '../lib/feedback'
 import { deduplicarPlazasCatalogo } from '../lib/plazas'
+import { contarRegistros } from '../lib/textUtils'
 
 const catalogo = ref({ available: false, message: '', equipos: [], plazas: [], facturadores: [] })
 const usuarios = ref([])
@@ -131,7 +132,7 @@ onMounted(cargar)
     </div>
     <p v-if="loading">Cargando equipos...</p>
     <div v-else-if="catalogo.available" class="panel-card tabla-contenedor">
-      <div class="toolbar-line"><h2 class="subtitulo subtitulo-inline">Equipos registrados</h2><span class="meta-pill">{{ catalogo.equipos.length }}</span></div>
+      <div class="toolbar-line"><h2 class="subtitulo subtitulo-inline">Equipos registrados</h2><span class="meta-pill">{{ contarRegistros(catalogo.equipos.length) }}</span></div>
       <div class="table-wrap modulo-table-wrap"><table><thead><tr><th>Número</th><th>Plaza</th><th>Líder actual</th><th>Facturador</th><th>Integrantes</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>
         <tr v-for="team in catalogo.equipos" :key="team.id">
           <template v-if="editandoId === team.id">

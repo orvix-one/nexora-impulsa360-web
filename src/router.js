@@ -24,12 +24,12 @@ const routes = [
   },
   {
     path: '/usuarios',
-    component: () => import('./components/Usuarios.vue'),
+    component: () => import('./pages/UsuariosPage.vue'),
     meta: { admin: true },
   },
   {
     path: '/equipos',
-    component: () => import('./components/Equipos.vue'),
+    component: () => import('./pages/EquiposPage.vue'),
     meta: { admin: true },
   },
   {
