@@ -43,9 +43,9 @@ export async function nombresMunicipios(supabase, ids) {
   return new Map((data ?? []).map((municipio) => [municipio.id, nombreMunicipio(municipio)]))
 }
 
-async function cargarMunicipios(supabase) {
+export async function cargarMunicipios(supabase) {
   const [municipios, provincias, departamentos, plazaMunicipios, plazas] = await Promise.all([
-    supabase.from('municipios').select('id,nombre,nombre_comun,provincia_id').order('nombre'),
+    supabase.from('municipios').select('id,codigo_ine,nombre,nombre_comun,provincia_id').order('nombre'),
     supabase.from('provincias').select('id,departamento_id'),
     supabase.from('departamentos').select('id,nombre'),
     supabase.from('plaza_municipios').select('plaza_id,municipio_id'),
@@ -59,6 +59,7 @@ async function cargarMunicipios(supabase) {
   const plazaPorMunicipio = new Map((plazaMunicipios.data ?? []).map((pm) => [pm.municipio_id, plazaNombre.get(pm.plaza_id) ?? null]))
   return (municipios.data ?? []).map((municipio) => ({
     id: municipio.id,
+    codigo_ine: municipio.codigo_ine,
     nombre: nombreMunicipio(municipio),
     departamento: departamentoNombre.get(departamentoPorProvincia.get(municipio.provincia_id)) ?? null,
     plaza: plazaPorMunicipio.get(municipio.id) ?? null,

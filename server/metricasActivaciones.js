@@ -1,5 +1,4 @@
 // Carga de activaciones para Metricas: proyeccion liviana leida en paginas paralelas.
-import { estadoEvento } from '../src/lib/eventos.js'
 
 export const SELECT_METRICAS_ACTIVACIONES = [
   'id',
@@ -24,6 +23,7 @@ export const SELECT_METRICAS_ACTIVACIONES = [
   'latitud',
   'longitud',
   'evento_id',
+  'municipio_id',
 ].join(',')
 
 // Limita las peticiones simultaneas para no saturar el pool de PostgREST.
@@ -69,17 +69,4 @@ export async function cargarActivacionesMetricas({ construirConsulta, pageSize =
   // Una insercion entre paginas desplaza el OFFSET y repite una fila.
   const vistas = new Set()
   return filas.filter((fila) => !vistas.has(fila.id) && vistas.add(fila.id))
-}
-
-export async function adjuntarEvento(supabase, filas, ahora = new Date()) {
-  const ids = [...new Set(filas.map((fila) => fila.evento_id).filter(Boolean))]
-  if (!ids.length) return filas
-  const { data, error } = await supabase.from('eventos').select('id,nombre,inicio,fin,cancelado_at').in('id', ids)
-  if (error) throw error
-  const eventos = new Map((data ?? []).map((evento) => [evento.id, evento]))
-  return filas.map((fila) => {
-    const evento = fila.evento_id && eventos.get(fila.evento_id)
-    if (!evento) return fila
-    return { ...fila, evento_nombre: evento.nombre ?? null, evento_estado: estadoEvento(evento, ahora) }
-  })
 }

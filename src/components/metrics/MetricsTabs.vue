@@ -6,6 +6,7 @@ const TABS = [
   { path: '/metricas/resumen', label: 'Resumen' },
   { path: '/metricas/equipos', label: 'Equipos' },
   { path: '/metricas/campo', label: 'Campo' },
+  { path: '/metricas/eventos', label: 'Eventos' },
 ]
 </script>
 
@@ -26,7 +27,7 @@ const TABS = [
 <style scoped>
 .metrics-tabs {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 0.42rem;
 }
 

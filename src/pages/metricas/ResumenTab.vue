@@ -11,7 +11,7 @@ import { gruposTarjetas } from '../../lib/metrics/tarjetas'
 import { useMetricas } from '../../lib/metrics/useMetricas'
 
 const { dashboard, hoy } = useMetricas()
-const grupos = computed(() => gruposTarjetas(dashboard.value, hoy))
+const grupos = computed(() => gruposTarjetas(dashboard.value, hoy.value))
 const grafico = computed(() => geometriaLinea(dashboard.value.porDia))
 const leyendaLinea = computed(() => [
   { marca: 'punto', texto: 'Activaciones' },

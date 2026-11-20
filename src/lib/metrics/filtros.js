@@ -1,6 +1,6 @@
 // @ts-check
+// Metrics filters: definitions, URL round-trip, scope (global vs per tab) and option catalogs.
 
-import { ESTADOS_EVENTO, etiquetaEstadoEvento } from '../eventos.js'
 import { normalizarPlazaClave } from '../plazas.js'
 import { texto } from './formato.js'
 import {
@@ -11,127 +11,77 @@ import {
   etiquetaConEstado,
   liderEtiqueta,
   liderKey,
-  plazaEtiqueta,
-  plazaKey,
+  territorioEtiqueta,
+  territorioKey,
   TIPOS_FUNCIONALES,
   tipoKey,
 } from './identidad.js'
+import { clavesMunicipio, enSeleccion, gruposTerritorio, SIN_MUNICIPIO } from './territorio.js'
+
+export { SIN_MUNICIPIO }
 
 /** @typedef {import('./tipos.js').Filtros} Filtros */
 /** @typedef {import('./tipos.js').Opcion} Opcion */
-export const SIN_PLAZA = 'Sin plaza'
-/** @param {string | undefined} grupo */
-const ordenGrupo = (grupo) => (grupo === SIN_PLAZA ? '\uffff' : grupo ?? '')
-
-/** Options arrive sorted by group; consecutive runs become one optgroup. @param {Opcion[]} opciones */
-export function agruparOpciones(opciones) {
-  /** @type {{ nombre: string, opciones: Opcion[] }[]} */
-  const grupos = []
-  for (const opcion of opciones) {
-    const nombre = opcion.grupo ?? SIN_PLAZA
-    if (grupos.at(-1)?.nombre !== nombre) grupos.push({ nombre, opciones: [] })
-    grupos.at(-1)?.opciones.push(opcion)
-  }
-  return grupos
-}
 /** @typedef {import('./tipos.js').Activacion} Activacion */
+/** @typedef {import('./tipos.js').Hoy} Hoy */
 /** @typedef {import('./identidad.js').Contexto} Contexto */
+
+export const PERIODOS = [
+  { value: 'hoy', label: 'Hoy', dias: 1 },
+  { value: '7d', label: 'Últimos 7 días', dias: 7 },
+  { value: '15d', label: 'Últimos 15 días', dias: 15 },
+  { value: 'mes', label: 'Este mes', dias: 0 },
+]
 
 /**
  * @typedef {object} DefinicionFiltro
  * @property {keyof Filtros} key State key.
  * @property {string} param URL query parameter.
  * @property {string} label
- * @property {'fecha' | 'seleccion'} tipo
- * @property {'plazas' | 'zonas' | 'activadores' | 'equipos' | 'lideres' | 'tipos' | 'eventos'} [opciones] Option list of a select.
+ * @property {'periodo' | 'fecha' | 'seleccion'} tipo
+ * @property {'global' | 'resumen' | 'campo'} ambito Global filters apply to every tab; the rest only to their tab.
+ * @property {'territorios' | 'zonas' | 'activadores' | 'equipos' | 'lideres' | 'tipos'} [opciones] Option list of a select.
  * @property {boolean} [multiple] Value is a list of keys; an empty list means no filter.
  * @property {string} [vacio] Label of the "no filter" option.
- * @property {boolean} [ocultarSinOpciones] Hide the control when its option list is empty.
  */
 
-/** Order is the UI order. @type {DefinicionFiltro[]} */
+/** @type {DefinicionFiltro[]} */
 export const FILTROS = [
-  { key: 'desde', param: 'desde', label: 'Fecha desde', tipo: 'fecha' },
-  { key: 'hasta', param: 'hasta', label: 'Fecha hasta', tipo: 'fecha' },
-  {
-    key: 'plaza',
-    param: 'ciudad',
-    label: 'Plaza / municipio',
-    tipo: 'seleccion',
-    opciones: 'plazas',
-    multiple: true,
-    vacio: 'Todas',
-  },
-  {
-    key: 'zona',
-    param: 'zona',
-    label: 'Barrio / zona',
-    tipo: 'seleccion',
-    opciones: 'zonas',
-    vacio: 'Todos',
-  },
-  {
-    key: 'activador',
-    param: 'activador',
-    label: 'Activador',
-    tipo: 'seleccion',
-    opciones: 'activadores',
-    vacio: 'Todos',
-  },
-  {
-    key: 'equipo',
-    param: 'equipo',
-    label: 'Equipo',
-    tipo: 'seleccion',
-    opciones: 'equipos',
-    vacio: 'Todos',
-  },
-  {
-    key: 'lider',
-    param: 'lider',
-    label: 'Líder de registro',
-    tipo: 'seleccion',
-    opciones: 'lideres',
-    vacio: 'Todos',
-    ocultarSinOpciones: true,
-  },
-  {
-    key: 'tipo',
-    param: 'tipo',
-    label: 'Tipo de activación',
-    tipo: 'seleccion',
-    opciones: 'tipos',
-    vacio: 'Todos',
-  },
-  {
-    key: 'evento',
-    param: 'evento',
-    label: 'Evento',
-    tipo: 'seleccion',
-    opciones: 'eventos',
-    vacio: 'Todos',
-    ocultarSinOpciones: true,
-  },
+  { key: 'periodo', param: 'periodo', label: 'Período', tipo: 'periodo', ambito: 'global' },
+  { key: 'desde', param: 'desde', label: 'Desde', tipo: 'fecha', ambito: 'global' },
+  { key: 'hasta', param: 'hasta', label: 'Hasta', tipo: 'fecha', ambito: 'global' },
+  { key: 'territorio', param: 'municipio', label: 'Territorio', tipo: 'seleccion', ambito: 'global', opciones: 'territorios', multiple: true, vacio: 'Todo el país' },
+  { key: 'activador', param: 'activador', label: 'Activadores', tipo: 'seleccion', ambito: 'global', opciones: 'activadores', multiple: true, vacio: 'Todos' },
+  { key: 'equipo', param: 'equipo', label: 'Equipo', tipo: 'seleccion', ambito: 'global', opciones: 'equipos', vacio: 'Todos' },
+  { key: 'lider', param: 'lider', label: 'Líder de registro', tipo: 'seleccion', ambito: 'global', opciones: 'lideres', vacio: 'Todos' },
+  { key: 'tipo', param: 'tipo', label: 'Tipo de activación', tipo: 'seleccion', ambito: 'resumen', opciones: 'tipos', vacio: 'Todos' },
+  { key: 'zona', param: 'zona', label: 'Barrio / zona', tipo: 'seleccion', ambito: 'campo', opciones: 'zonas', vacio: 'Todos' },
 ]
 
 const FECHA_ISO = /^\d{4}-\d{2}-\d{2}$/
 const MAX_VALOR = 200
-const MAX_SELECCION = 100
+const MAX_SELECCION = 400
 
 /** @param {string | string[]} valor */
-const tieneValor = (valor) => (Array.isArray(valor) ? valor.length > 0 : Boolean(valor))
+export const tieneValor = (valor) => (Array.isArray(valor) ? valor.length > 0 : Boolean(valor))
 
 /** @param {unknown} raw */
 const limpiar = (raw) => (typeof raw === 'string' ? raw.trim().slice(0, MAX_VALOR) : '')
 
 /** @returns {Filtros} */
 export function filtrosVacios() {
-  return { desde: '', hasta: '', plaza: [], zona: '', activador: '', tipo: '', lider: '', equipo: '', evento: '' }
+  return { periodo: '', desde: '', hasta: '', territorio: [], activador: [], equipo: '', lider: '', tipo: '', zona: '' }
 }
 
-/** @param {Filtros} filtros */
-export function hayFiltros(filtros) {
-  return FILTROS.some(({ key }) => tieneValor(filtros[key]))
+/** @param {Filtros} filtros @param {DefinicionFiltro['ambito']} [ambito] */
+export function hayFiltros(filtros, ambito) {
+  return FILTROS.some(({ key, ambito: propio }) => (!ambito || propio === ambito) && tieneValor(filtros[key]))
+}
+
+/** @param {Filtros} filtros @param {DefinicionFiltro['ambito']} ambito */
+export function limpiarAmbito(filtros, ambito) {
+  const vacios = filtrosVacios()
+  for (const { key, ambito: propio } of FILTROS) if (propio === ambito) Object.assign(filtros, { [key]: vacios[key] })
 }
 
 /** @param {Record<string, unknown>} query vue-router `route.query`. @returns {Filtros} */
@@ -146,8 +96,11 @@ export function filtrosDesdeQuery(query) {
       continue
     }
     const valor = limpiar(Array.isArray(raw) ? raw[0] : raw)
-    filtros[key] = tipo === 'fecha' && !FECHA_ISO.test(valor) ? '' : valor
+    if (tipo === 'fecha') filtros[key] = FECHA_ISO.test(valor) ? valor : ''
+    else if (tipo === 'periodo') filtros[key] = PERIODOS.some((p) => p.value === valor) ? valor : ''
+    else filtros[key] = valor
   }
+  if (filtros.periodo) Object.assign(filtros, { desde: '', hasta: '' })
   return /** @type {Filtros} */ (filtros)
 }
 
@@ -157,6 +110,35 @@ export function filtrosAQuery(filtros) {
   const query = {}
   for (const { key, param } of FILTROS) if (tieneValor(filtros[key])) query[param] = filtros[key]
   return query
+}
+
+/** @param {string} fecha YYYY-MM-DD @param {number} dias */
+function restarDias(fecha, dias) {
+  const date = new Date(`${fecha}T12:00:00Z`)
+  date.setUTCDate(date.getUTCDate() - dias)
+  return date.toISOString().slice(0, 10)
+}
+
+/** A preset is relative to today, so a shared link keeps meaning "last 7 days". @param {Filtros} filtros @param {Hoy} hoy */
+export function resolverPeriodo(filtros, hoy) {
+  const preset = PERIODOS.find((p) => p.value === filtros.periodo)
+  if (!preset) return { desde: filtros.desde, hasta: filtros.hasta }
+  if (preset.value === 'mes') return { desde: `${hoy.monthKey}-01`, hasta: hoy.todayKey }
+  return { desde: restarDias(hoy.todayKey, preset.dias - 1), hasta: hoy.todayKey }
+}
+
+/**
+ * Filters that actually apply: the period resolved to dates and, given a tab, other tabs' filters dropped.
+ * @param {Filtros} filtros @param {Hoy} hoy @param {string} [tab] @returns {Filtros}
+ */
+export function filtrosEfectivos(filtros, hoy, tab) {
+  const vacios = filtrosVacios()
+  /** @type {Filtros} */
+  const efectivos = { ...filtros, ...resolverPeriodo(filtros, hoy), periodo: '' }
+  for (const { key, ambito } of FILTROS) {
+    if (tab && ambito !== 'global' && ambito !== tab) Object.assign(efectivos, { [key]: vacios[key] })
+  }
+  return efectivos
 }
 
 /** @param {Filtros} filtros @param {ReturnType<typeof construirOpciones>} opciones @returns {Filtros} */
@@ -175,43 +157,36 @@ export function sanearFiltros(filtros, opciones) {
 /** @param {Activacion} item */
 export function zonaKey(item) {
   const clave = normalizarPlazaClave(item.zona_activacion)
-  return clave ? `${plazaKey(item)}|${clave}` : ''
-}
-
-/** @param {Activacion} item */
-export function eventoKey(item) {
-  const id = texto(item.evento_id).toLowerCase()
-  return id ? `eid:${id}` : 'none'
+  return clave ? `${territorioKey(item)}|${clave}` : ''
 }
 
 /** @param {Activacion} item @param {Contexto} ctx */
 export function claveFiltrable(item, ctx) {
   return {
-    plaza: plazaKey(item),
+    territorio: territorioKey(item),
+    territorioGrupos: clavesMunicipio(item.municipio_id, ctx),
     zona: zonaKey(item),
     activador: activadorKey(item),
     tipo: tipoKey(item),
     lider: liderKey(item, ctx),
     equipo: equipoKey(item, ctx),
-    evento: eventoKey(item),
   }
 }
 
 /**
  * @param {string} fecha Registration day.
  * @param {ReturnType<typeof claveFiltrable>} claves
- * @param {Filtros} filtros
+ * @param {Filtros} filtros Effective filters (see `filtrosEfectivos`).
  */
 export function coincideFiltros(fecha, claves, filtros) {
   if (filtros.desde && (!fecha || fecha < filtros.desde)) return false
   if (filtros.hasta && (!fecha || fecha > filtros.hasta)) return false
-  if (filtros.plaza.length && !filtros.plaza.includes(claves.plaza)) return false
+  if (filtros.territorio.length && !enSeleccion(filtros.territorio, claves.territorioGrupos)) return false
   if (filtros.zona && claves.zona !== filtros.zona) return false
-  if (filtros.activador && claves.activador !== filtros.activador) return false
+  if (filtros.activador.length && !filtros.activador.includes(claves.activador)) return false
   if (filtros.tipo && claves.tipo !== filtros.tipo) return false
   if (filtros.lider && claves.lider !== filtros.lider) return false
   if (filtros.equipo && claves.equipo !== filtros.equipo) return false
-  if (filtros.evento && claves.evento !== filtros.evento) return false
   return true
 }
 
@@ -230,7 +205,7 @@ function integrantesEquipo(ctx, filtros) {
 export function integrantesRanking(ctx, filtros) {
   return (filtros.equipo ? integrantesEquipo(ctx, filtros) : ctx.catalogoActivadores).filter(
     (usuario) => {
-      if (filtros.activador && activadorKey(usuario) !== filtros.activador) return false
+      if (filtros.activador.length && !filtros.activador.includes(activadorKey(usuario))) return false
       if (filtros.lider && liderKey(usuario, ctx) !== filtros.lider) return false
       return true
     },
@@ -239,25 +214,17 @@ export function integrantesRanking(ctx, filtros) {
 
 /** @param {Contexto} ctx */
 export function construirOpciones(ctx) {
-  /** @type {Map<string, Opcion>} */ const plazas = new Map()
+  /** @type {Map<string, Opcion>} */ const territorios = new Map()
   /** @type {Map<string, Opcion>} */ const zonas = new Map()
   /** @type {Map<string, Opcion>} */ const activadores = new Map()
   /** @type {Map<string, Opcion>} */ const tipos = new Map()
   /** @type {Map<string, Opcion>} */ const lideres = new Map()
   /** @type {Map<string, Opcion>} */ const equipos = new Map()
-  /** @type {Map<string, Opcion>} */ const eventos = new Map()
   for (const item of ctx.activaciones) {
-    const evento = eventoKey(item)
-    if (evento !== 'none' && !eventos.has(evento))
-      eventos.set(evento, {
-        key: evento,
-        nombre: texto(item.evento_nombre) || 'Evento sin nombre',
-        grupo: etiquetaEstadoEvento(texto(item.evento_estado) || 'finalizado'),
-      })
-    const plaza = plazaKey(item)
-    if (!plazas.has(plaza)) plazas.set(plaza, { key: plaza, nombre: plazaEtiqueta(item) })
+    const territorio = territorioKey(item)
+    if (!territorios.has(territorio)) territorios.set(territorio, opcionTerritorio(item, ctx))
     const zona = zonaKey(item)
-    if (zona && !zonas.has(zona)) zonas.set(zona, { key: zona, nombre: texto(item.zona_activacion), ciudad: plaza })
+    if (zona && !zonas.has(zona)) zonas.set(zona, { key: zona, nombre: texto(item.zona_activacion), ciudad: territorio })
     const activador = activadorKey(item)
     if (!activadores.has(activador))
       activadores.set(activador, {
@@ -272,9 +239,6 @@ export function construirOpciones(ctx) {
       lideres.set(lider, { key: lider, nombre: liderEtiqueta(item, lider, ctx) })
     const key = equipoKey(item, ctx)
     if (!equipos.has(key)) equipos.set(key, { key, nombre: equipoEtiqueta(item, key, ctx) })
-  }
-  for (const opcion of plazas.values()) {
-    opcion.grupo = ctx.plazaPorCiudad.get(normalizarPlazaClave(opcion.nombre)) ?? SIN_PLAZA
   }
   for (const usuario of ctx.catalogoActivadores) {
     const id = texto(usuario.equipo_id).toLowerCase()
@@ -330,23 +294,29 @@ export function construirOpciones(ctx) {
   const ordenar = (/** @type {Iterable<Opcion>} */ entries) =>
     [...entries].sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'))
   return {
-    plazas: [...plazas.values()].sort((a, b) =>
-      ordenGrupo(a.grupo).localeCompare(ordenGrupo(b.grupo), 'es') || a.nombre.localeCompare(b.nombre, 'es')),
+    territorios: [...ordenar(territorios.values()), ...gruposTerritorio(ctx)],
     zonas: ordenar(zonas.values()),
     activadores: ordenar(activadores.values()),
     tipos: ordenar(tipos.values()),
     lideres: ordenar(lideres.values()),
     equipos: ordenarEquipos(equipos.values()),
-    eventos: eventos.size ? [...ordenarEventos(eventos.values()), { key: 'none', nombre: 'Sin evento' }] : [],
   }
 }
 
-const ORDEN_ESTADO = ESTADOS_EVENTO.map((estado) => estado.label)
-
-/** @param {Iterable<Opcion>} entries */
-function ordenarEventos(entries) {
-  const rango = (/** @type {Opcion} */ o) => ORDEN_ESTADO.indexOf(o.grupo ?? '')
-  return [...entries].sort((a, b) => rango(a) - rango(b) || a.nombre.localeCompare(b.nombre, 'es'))
+/** @param {Activacion} item @param {Contexto} ctx @returns {Opcion} */
+export function opcionTerritorio(item, ctx) {
+  const key = territorioKey(item)
+  const municipio = ctx.municipios.get(Number(item.municipio_id))
+  if (!municipio) return { key, nombre: key === 'none' ? SIN_MUNICIPIO : territorioEtiqueta(item, ctx), departamento: null, plaza: null, nivel: 'municipio' }
+  const claves = clavesMunicipio(item.municipio_id, ctx)
+  return {
+    key,
+    nombre: municipio.nombre,
+    departamento: municipio.departamento,
+    plaza: municipio.plaza,
+    nivel: 'municipio',
+    grupos: [claves.departamento, claves.plaza].filter(Boolean),
+  }
 }
 
 /** @param {Iterable<Opcion>} entries */

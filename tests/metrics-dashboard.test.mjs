@@ -4,10 +4,9 @@ import { calcularDashboard } from '../src/lib/metrics/agregados.js'
 import { cargarDatosMetricas } from '../src/lib/metrics/carga.js'
 import { dashboardCsv } from '../src/lib/metrics/exportCsv.js'
 import { calendarioHoy } from '../src/lib/metrics/fechas.js'
-import { construirOpciones, filtrosVacios } from '../src/lib/metrics/filtros.js'
+import { construirOpciones, filtrosVacios, SIN_MUNICIPIO } from '../src/lib/metrics/filtros.js'
 import { crearContexto } from '../src/lib/metrics/identidad.js'
 import { gruposTarjetas } from '../src/lib/metrics/tarjetas.js'
-import { normalizarPlazaClave, SIN_CIUDAD_REGISTRADA } from '../src/lib/plazas.js'
 
 const AHORA = new Date('2026-10-15T16:00:00Z')
 const actual = '10000000-0000-0000-0000-000000000001'
@@ -31,16 +30,22 @@ const rows = Array.from({ length: 5 }, (_, i) => ({
   lider_nombre_registro: i < 4 ? 'Líder anterior' : 'Líder actual',
   fecha_activacion: `2026-10-0${i + 1}`,
   ciudad_activacion: 'la_paz',
+  municipio_id: 1,
   plaza: 'La Paz',
   tipo_activacion: 'comercio',
 }))
+const municipios = [
+  { id: 1, codigo_ine: '020101', nombre: 'La Paz', departamento: 'La Paz', plaza: 'La Paz' },
+  { id: 2, codigo_ine: '020105', nombre: 'El Alto', departamento: 'La Paz', plaza: 'El Alto' },
+  { id: 3, codigo_ine: '040101', nombre: 'Oruro', departamento: 'Oruro', plaza: 'Oruro' },
+]
 
 function montar(activaciones = rows, usuarios = users) {
   const datos = structuredClone(activaciones)
   const ctx = crearContexto({
     activaciones: datos,
     usuarios: structuredClone(usuarios),
-    ciudadesPorPlaza: [],
+    municipios,
   })
   const filtros = filtrosVacios()
   const hoy = calendarioHoy(AHORA)
@@ -76,7 +81,7 @@ async function assertCount(vm, expected) {
 
 test('el alcance del líder sigue lider_id_registro y conserva el corte por activador', async () => {
   const vm = montar()
-  vm.filtros.activador = `uid:${activador}`
+  vm.filtros.activador = [`uid:${activador}`]
   await assertCount(vm, 5)
   assert.deepEqual(
     vm.dashboard.rows.map((r) => r.id),
@@ -100,19 +105,19 @@ test('el alcance del líder sigue lider_id_registro y conserva el corte por acti
   await assertCount(vm, 4) // las registradas bajo el líder anterior
 })
 
-test('mantiene filtros de fechas, plaza, tipo y activador sobre el mismo corte', async () => {
+test('mantiene filtros de fechas, territorio, tipo y activador sobre el mismo corte', async () => {
   const vm = montar()
   vm.filtros.lider = `lid:${anterior}`
-  vm.filtros.activador = `uid:${activador}`
+  vm.filtros.activador = [`uid:${activador}`]
   vm.filtros.desde = '2026-10-02'
   vm.filtros.hasta = '2026-10-04'
-  vm.filtros.plaza = ['pkey:lapaz']
+  vm.filtros.territorio = ['mun:1']
   vm.filtros.tipo = 'comercio'
   await assertCount(vm, 3)
   for (const [clave, value] of [
-    ['plaza', 'pkey:oruro'],
+    ['territorio', ['mun:3']],
     ['tipo', 'otro'],
-    ['activador', `uid:${otro}`],
+    ['activador', [`uid:${otro}`]],
   ]) {
     const original = vm.filtros[clave]
     vm.filtros[clave] = value
@@ -185,15 +190,15 @@ test('ranking general incluye todo el catálogo sin excluir inhabilitados, dedup
     ],
   )
   assert.equal(vm.opciones.activadores.filter((item) => item.key === `uid:${cero}`).length, 1)
-  vm.filtros.activador = `uid:${cero}`
+  vm.filtros.activador = [`uid:${cero}`]
   await assertCount(vm, 0)
   assert.deepEqual(
     vm.dashboard.topActivadores.map((item) => [item.label, item.value]),
     [['Ana', 0]],
   )
-  vm.filtros.activador = ''
+  vm.filtros.activador = []
   vm.filtros.desde = '2027-01-01'
-  vm.filtros.plaza = ['pkey:oruro']
+  vm.filtros.territorio = ['mun:3']
   vm.filtros.tipo = 'otro'
   await assertCount(vm, 0)
   assert.deepEqual(
@@ -215,19 +220,22 @@ test('un fallo del catálogo no publica métricas de líder incompletas', async 
   await assertCount(vm, 0)
 })
 
-test('un fallo al agrupar ciudades por plaza no impide cargar las métricas', async () => {
+test('un fallo del catálogo de municipios no impide cargar las métricas', async () => {
   const registrados = []
   const datos = await cargarDatosMetricas({
     fetchActivaciones: async () => structuredClone(rows),
     solicitar: async (path) => {
       if (path === '/portal/users') return { users: structuredClone(users) }
-      throw new Error('Plazas no disponibles')
+      throw new Error('Municipios no disponibles')
     },
     registrarError: (contexto) => registrados.push(contexto),
   })
   assert.equal(datos.activaciones.length, rows.length)
-  assert.deepEqual(datos.ciudadesPorPlaza, [])
-  assert.deepEqual(registrados, ['metricas.ciudades-por-plaza'])
+  assert.deepEqual(datos.municipios, [])
+  assert.deepEqual(registrados.sort(), ['metricas.eventos', 'metricas.municipios'])
+  assert.deepEqual(datos.eventos, [])
+  const sinCatalogo = crearContexto({ activaciones: datos.activaciones, usuarios: datos.usuarios })
+  assert.equal(construirOpciones(sinCatalogo).territorios[0].nombre, 'La Paz', 'sin catálogo usa el nombre de la ciudad')
 })
 
 test('equipo combina integrantes autorizados con 0, 1 y varias activaciones sin cambiar totales', async () => {
@@ -261,12 +269,12 @@ test('equipo combina integrantes autorizados con 0, 1 y varias activaciones sin 
   assert.deepEqual(vm.dashboard.kpis, baselineKpis)
   assert.equal(await vm.csv(), baselineCsv)
   assert.ok(vm.opciones.activadores.some((a) => a.key === `uid:${cero}`))
-  vm.filtros.activador = `uid:${cero}`
+  vm.filtros.activador = [`uid:${cero}`]
   await assertCount(vm, 0)
   assert.equal(vm.dashboard.topActivadores.length, 1)
-  vm.filtros.activador = 'uid:fuera'
+  vm.filtros.activador = ['uid:fuera']
   assert.equal(vm.dashboard.topActivadores.length, 0)
-  vm.filtros.activador = ''
+  vm.filtros.activador = []
   vm.filtros.desde = '2027-01-01'
   await assertCount(vm, 0)
   assert.deepEqual(
@@ -345,84 +353,37 @@ test('reconoce Cliente antiguo como categoría sin alterar los tipos existentes'
   await assertCount(vm, 5)
 })
 
-test('la ciudad geográfica prevalece sobre la plaza organizacional en selector, filtro y gráfico Ciudades', async () => {
-  const pidAlto = '70000000-0000-0000-0000-000000000001'
-  const pidOruro = '70000000-0000-0000-0000-000000000002'
+test('el territorio sale del municipio del GPS, no de la plaza organizacional', async () => {
   const data = [
-    // Activador de La Paz que activó en El Alto.
-    {
-      ...rows[0],
-      id: 'a0000000-0000-0000-0000-000000000001',
-      ciudad_activacion: 'el_alto',
-      plaza_efectiva_id_registro: pidAlto,
-      plaza_efectiva_registro: 'La Paz',
-      plaza_base_registro: 'La Paz',
-    },
-    {
-      ...rows[1],
-      id: 'a0000000-0000-0000-0000-000000000002',
-      ciudad_activacion: 'El Alto',
-      plaza_efectiva_id_registro: pidAlto,
-      plaza_efectiva_registro: 'el_alto',
-      plaza: '',
-    },
-    // Activador de El Alto que activó en La Paz.
-    {
-      ...rows[2],
-      id: 'a0000000-0000-0000-0000-000000000003',
-      ciudad_activacion: 'la_paz',
-      plaza_efectiva_id_registro: pidOruro,
-      plaza_efectiva_registro: 'El Alto',
-    },
-    // Sin ciudad registrada: no se sustituye por la plaza del activador.
-    {
-      ...rows[3],
-      id: 'a0000000-0000-0000-0000-000000000004',
-      ciudad_activacion: null,
-      plaza_efectiva_id_registro: pidAlto,
-      plaza_efectiva_registro: 'La Paz',
-      plaza: 'La Paz',
-    },
-    {
-      ...rows[4],
-      id: 'a0000000-0000-0000-0000-000000000005',
-      ciudad_activacion: '   ',
-      plaza_efectiva_id_registro: pidOruro,
-      plaza_efectiva_registro: 'Oruro',
-      plaza: '',
-    },
+    { ...rows[0], id: 'a1', municipio_id: 2, ciudad_activacion: 'El Alto', plaza_efectiva_registro: 'La Paz' },
+    { ...rows[1], id: 'a2', municipio_id: 2, ciudad_activacion: 'El Alto', plaza_efectiva_registro: 'La Paz' },
+    { ...rows[2], id: 'a3', municipio_id: 1, ciudad_activacion: 'La Paz', plaza_efectiva_registro: 'El Alto' },
+    { ...rows[3], id: 'a4', municipio_id: null, ciudad_activacion: null },
+    { ...rows[4], id: 'a5', municipio_id: null, ciudad_activacion: '   ' },
   ]
   const vm = montar(data)
   await assertCount(vm, 5)
-
-  const alto = vm.opciones.plazas.filter((p) => normalizarPlazaClave(p.nombre) === 'elalto')
-  assert.equal(alto.length, 1, "'el_alto' y 'El Alto' son la misma ciudad")
-  assert.equal(alto[0].key, 'pkey:elalto')
-  assert.equal(alto[0].nombre, 'El Alto')
-
-  const lapaz = vm.opciones.plazas.filter((p) => normalizarPlazaClave(p.nombre) === 'lapaz')
-  assert.equal(lapaz.length, 1, 'la plaza organizacional El Alto no crea otra ciudad de La Paz')
-  assert.equal(lapaz[0].key, 'pkey:lapaz')
-
-  const sinCiudad = vm.opciones.plazas.find((p) => p.key === 'none')
-  assert.equal(sinCiudad.nombre, SIN_CIUDAD_REGISTRADA)
-
-  const barras = Object.fromEntries(vm.dashboard.porPlaza.map((i) => [i.key, i.value]))
-  assert.equal(barras['pkey:elalto'], 2, 'las dos filas con ciudad El Alto se agrupan juntas')
-  assert.equal(
-    barras['pkey:lapaz'],
-    1,
-    'la fila con plaza organizacional El Alto cuenta como La Paz',
+  assert.deepEqual(
+    vm.opciones.territorios.filter((o) => o.nivel === 'municipio').map((o) => [o.key, o.nombre, o.departamento, o.plaza]),
+    [['mun:2', 'El Alto', 'La Paz', 'El Alto'], ['mun:1', 'La Paz', 'La Paz', 'La Paz'], ['none', SIN_MUNICIPIO, null, null]],
   )
-  assert.equal(barras.none, 2, 'ciudad NULL o vacía agrupa en "Sin ciudad registrada"')
+  const barras = (lista) => Object.fromEntries(lista.map((i) => [i.label, i.value]))
+  assert.deepEqual(barras(vm.dashboard.porMunicipio), { 'El Alto': 2, 'La Paz': 1, [SIN_MUNICIPIO]: 2 })
+  assert.deepEqual(barras(vm.dashboard.porDepartamento), { 'La Paz': 3, 'Sin departamento': 2 })
+  assert.deepEqual(barras(vm.dashboard.porPlazaCliente), { 'El Alto': 2, 'La Paz': 1, 'Sin plaza': 2 })
 
-  vm.filtros.plaza = ['pkey:elalto']
+  vm.filtros.territorio = ['mun:2']
   await assertCount(vm, 2)
   assert.ok((await vm.csv()).includes('El Alto'))
-  vm.filtros.plaza = ['none']
+  vm.filtros.territorio = ['none']
   await assertCount(vm, 2)
-  assert.ok((await vm.csv()).includes(SIN_CIUDAD_REGISTRADA))
-  vm.filtros.plaza = []
+  vm.filtros.territorio = ['mun:1', 'mun:2']
+  await assertCount(vm, 3)
+  vm.filtros.territorio = ['dep:02']
+  await assertCount(vm, 3)
+  vm.filtros.territorio = ['pla:El Alto']
+  await assertCount(vm, 2)
+  vm.filtros.territorio = []
   await assertCount(vm, 5)
 })
 
@@ -508,11 +469,11 @@ test('promedios recalculan con filtros no de fecha sobre el mismo período', asy
   vm.filtros.hasta = '2026-10-05'
   await assertCount(vm, 5)
   assert.equal(vm.dashboard.promedios.calendarioDiario, 1) // 5 / 5
-  vm.filtros.plaza = ['pkey:oruro']
+  vm.filtros.territorio = ['mun:3']
   await assertCount(vm, 0)
   assert.equal(vm.dashboard.promedios.calendarioDiario, 0) // protegido: 0 / 5
   assert.equal(vm.dashboard.promedios.calendarioSemanal, 0)
-  vm.filtros.plaza = ['pkey:lapaz']
+  vm.filtros.territorio = ['mun:1']
   await assertCount(vm, 5)
   assert.equal(vm.dashboard.promedios.calendarioDiario, 1)
   vm.filtros.tipo = 'no-existe'
@@ -640,29 +601,22 @@ test('Comercios cuenta tienda de barrio y comercio con subtipo comercio o limbo'
   assert.equal(vm.dashboard.topActivadores[0].comercios, 2)
 })
 
-test('filtro de evento y plaza múltiple', async () => {
-  const evento = '60000000-0000-0000-0000-00000000000A'
-  const finalizado = '60000000-0000-0000-0000-00000000000B'
-  const data = rows.map((row, i) => ({
-    ...row,
-    ciudad_activacion: i < 2 ? 'Oruro' : row.ciudad_activacion,
-    evento_id: [evento, finalizado][i] ?? null,
-    evento_nombre: ['Zona Sur', 'Antigua'][i],
-    evento_estado: ['en_curso', 'finalizado'][i],
-  }))
+test('el período relativo se resuelve contra hoy y los filtros locales solo aplican en su tab', async () => {
+  const data = rows.map((row, i) => ({ ...row, fecha_activacion: ['2026-10-15', '2026-10-14', '2026-10-09', '2026-10-01', '2026-09-30'][i] }))
   const vm = montar(data)
-  assert.deepEqual(
-    vm.opciones.eventos.map((o) => [o.grupo, o.nombre]),
-    [['En curso', 'Zona Sur'], ['Finalizado', 'Antigua'], [undefined, 'Sin evento']],
-  )
-  vm.filtros.evento = `eid:${evento.toLowerCase()}`
+  vm.filtros.periodo = 'hoy'
   await assertCount(vm, 1)
-  vm.filtros.evento = 'none'
+  vm.filtros.periodo = '7d'
   await assertCount(vm, 3)
-  vm.filtros.evento = ''
-  vm.filtros.plaza = ['pkey:oruro']
-  await assertCount(vm, 2)
-  vm.filtros.plaza = ['pkey:oruro', 'pkey:lapaz']
-  await assertCount(vm, 5)
-  assert.deepEqual(montar().opciones.eventos, [], 'sin eventos el filtro no se ofrece')
+  vm.filtros.periodo = 'mes'
+  await assertCount(vm, 4)
+  vm.filtros.periodo = ''
+  vm.filtros.tipo = 'otro'
+  await assertCount(vm, 0)
+  const hoy = calendarioHoy(AHORA)
+  const ctx = crearContexto({ activaciones: data, usuarios: users, municipios })
+  const enEquipos = calcularDashboard({ activaciones: data, ctx, filtros: vm.filtros, hoy, tab: 'equipos' })
+  assert.equal(enEquipos.kpis.total, 5, 'el tipo es un filtro de Resumen')
+  const enResumen = calcularDashboard({ activaciones: data, ctx, filtros: vm.filtros, hoy, tab: 'resumen' })
+  assert.equal(enResumen.kpis.total, 0)
 })

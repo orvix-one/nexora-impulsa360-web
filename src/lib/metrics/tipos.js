@@ -28,8 +28,7 @@
  * @property {number | string | null} [latitud]
  * @property {number | string | null} [longitud]
  * @property {string | null} [evento_id]
- * @property {string | null} [evento_nombre] Joined by the API from `eventos`.
- * @property {string | null} [evento_estado] `estadoEvento` at load time.
+ * @property {number | null} [municipio_id] Located from GPS by the database.
  */
 
 /**
@@ -49,15 +48,37 @@
 
 /**
  * @typedef {object} Filtros
+ * @property {string} periodo Preset (`hoy`, `7d`, `15d`, `mes`) or '' for the custom range in desde/hasta.
  * @property {string} desde YYYY-MM-DD or ''.
  * @property {string} hasta YYYY-MM-DD or ''.
- * @property {string[]} plaza Keys `pkey:<clave>` / 'none'; empty means all.
- * @property {string} zona Key `<plaza key>|<barrio>` or ''; only offered once a city is chosen.
- * @property {string} activador Key `uid:<id>` / 'none' or ''.
+ * @property {string[]} territorio Keys `mun:<id>` / 'none'; empty means all.
+ * @property {string} zona Key `<territorio key>|<barrio>` or ''.
+ * @property {string[]} activador Keys `uid:<id>` / 'none'; empty means all.
  * @property {string} tipo Normalized tipo key or ''.
  * @property {string} lider Key `lid:<id>` or ''.
  * @property {string} equipo Key `id:|num:|name:` or ''.
- * @property {string} evento Key `eid:<id>` / 'none' or ''.
+ */
+
+/**
+ * Row of /portal/metrics/eventos.
+ * @typedef {object} Evento
+ * @property {string} id
+ * @property {string} nombre
+ * @property {string} inicio ISO timestamp.
+ * @property {string | null} fin
+ * @property {'en_curso' | 'programado' | 'finalizado' | 'cancelado'} estado At load time.
+ * @property {string | null} lugar
+ * @property {{ id: string, nombre: string, desde: string }[]} activadores
+ */
+
+/**
+ * Row of /portal/municipios.
+ * @typedef {object} Municipio
+ * @property {number} id
+ * @property {string} codigo_ine
+ * @property {string} nombre
+ * @property {string | null} departamento
+ * @property {string | null} plaza Client plaza that groups it.
  */
 
 /**
@@ -72,8 +93,11 @@
  * @typedef {object} Opcion
  * @property {string} key
  * @property {string} nombre
- * @property {string} [grupo] Optgroup label: client plaza of a city, state of an event.
- * @property {string} [ciudad] City key a barrio option belongs to.
+ * @property {string | null} [departamento] Of a territory option.
+ * @property {string | null} [plaza] Client plaza of a territory option.
+ * @property {'municipio' | 'departamento' | 'plaza'} [nivel] Of a territory option.
+ * @property {string[]} [grupos] Departamento and plaza keys that include a municipio option.
+ * @property {string} [ciudad] Territory key a barrio option belongs to.
  */
 
 /**

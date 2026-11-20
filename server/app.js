@@ -12,8 +12,9 @@ import { abrirFuentePostgres, respaldarDb, RESPALDO_ESTADO_KEY } from './respald
 import { aplicarFiltrosActivaciones, crearCatalogoCiudades, normalizarFiltros, resolverCiudadesFiltro } from './activacionesFiltros.js'
 import { SELECT_LISTADO_ACTIVACIONES, parsearPagina } from './activacionesListado.js'
 import { parsearAliasesPlaza } from '../src/lib/plazas.js'
-import { adjuntarEvento, cargarActivacionesMetricas } from './metricasActivaciones.js'
-import { nombresMunicipios, registrarRutasViajes } from './viajes.js'
+import { cargarActivacionesMetricas } from './metricasActivaciones.js'
+import { cargarEventosMetricas } from './metricasEventos.js'
+import { cargarMunicipios, nombresMunicipios, registrarRutasViajes } from './viajes.js'
 import { registrarRutasLugares } from './lugares.js'
 import { registrarRutasEventos } from './eventos.js'
 import { registrarRutasPlazaMunicipios } from './plazaMunicipios.js'
@@ -1331,22 +1332,10 @@ export function createAdminApiApp({
     }
     res.json({ plazas: data ?? [] })
   }))
-  app.get('/portal/ciudades-por-plaza', asyncRoute(async (_req, res) => {
-    const [vinculos, plazas] = await Promise.all([
-      adminSupabase.from('plaza_municipios').select('plaza_id,municipio_id'),
-      adminSupabase.from('plazas').select('id,nombre'),
-    ])
-    if (vinculos.error || plazas.error) {
-      jsonError(res, 500, 'No se pudo obtener las plazas de cada ciudad.', (vinculos.error ?? plazas.error).message)
-      return
-    }
-    const ciudades = await nombresMunicipios(adminSupabase, (vinculos.data ?? []).map((v) => v.municipio_id))
-    const plazaNombre = new Map((plazas.data ?? []).map((p) => [p.id, p.nombre]))
-    res.json({
-      ciudades: (vinculos.data ?? [])
-        .map((v) => ({ ciudad: ciudades.get(v.municipio_id), plaza: plazaNombre.get(v.plaza_id) }))
-        .filter((v) => v.ciudad && v.plaza),
-    })
+  app.get('/portal/municipios', asyncRoute(async (_req, res) => {
+    const municipios = await cargarMunicipios(adminSupabase)
+    res.setHeader('Cache-Control', 'private, max-age=3600')
+    res.json({ municipios })
   }))
   app.get('/portal/users', asyncRoute(async (req, res) => {
     let query = adminSupabase.from('activadores').select('*').order('nombre')
@@ -1406,16 +1395,27 @@ export function createAdminApiApp({
     }
     let activations
     try {
-      activations = await adjuntarEvento(
-        adminSupabase,
-        await cargarActivacionesMetricas({ construirConsulta, pageSize: metricsPageSize }),
-      )
+      activations = await cargarActivacionesMetricas({ construirConsulta, pageSize: metricsPageSize })
     } catch (error) {
       jsonError(res, 500, 'No se pudo obtener activaciones.', error?.message)
       return
     }
     sinCache(res)
     res.json({ activations, generatedAt: new Date().toISOString() })
+  }))
+
+  app.get('/portal/metrics/eventos', asyncRoute(async (req, res) => {
+    const { alcance, error: teamError } = await resolverAlcanceLider(adminSupabase, req.user)
+    if (teamError) { jsonError(res, 500, 'No se pudo resolver el equipo.', teamError.message); return }
+    let eventos
+    try {
+      eventos = await cargarEventosMetricas(adminSupabase, alcance)
+    } catch (error) {
+      jsonError(res, 500, 'No se pudo obtener los eventos.', error?.message)
+      return
+    }
+    sinCache(res)
+    res.json({ eventos })
   }))
 
   app.get('/portal/activations/export-rows', asyncRoute(async (req, res) => {

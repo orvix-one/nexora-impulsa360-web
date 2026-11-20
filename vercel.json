@@ -9,6 +9,11 @@
       "dest": "/api/index.js?__api_path=$1"
     },
     {
+      "src": "/geo/(.*)",
+      "headers": { "Cache-Control": "public, max-age=86400, stale-while-revalidate=604800" },
+      "continue": true
+    },
+    {
       "handle": "filesystem"
     },
     {

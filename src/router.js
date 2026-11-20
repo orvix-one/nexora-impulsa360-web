@@ -20,6 +20,7 @@ const routes = [
       { path: 'resumen', component: () => import('./pages/metricas/ResumenTab.vue') },
       { path: 'equipos', component: () => import('./pages/metricas/EquiposTab.vue') },
       { path: 'campo', component: () => import('./pages/metricas/CampoTab.vue') },
+      { path: 'eventos', component: () => import('./pages/metricas/EventosTab.vue') },
     ],
   },
   {

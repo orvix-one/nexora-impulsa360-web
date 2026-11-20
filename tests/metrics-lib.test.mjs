@@ -6,8 +6,10 @@ import {
   filtrosDesdeQuery,
   filtrosVacios,
   hayFiltros,
+  resolverPeriodo,
   sanearFiltros,
 } from '../src/lib/metrics/filtros.js'
+import { chipsSeleccion, resumenPeriodo } from '../src/lib/metrics/resumenFiltros.js'
 import {
   escalaEjeY,
   estiloCeldaCalor,
@@ -31,36 +33,83 @@ test('diasEntre es inclusivo y devuelve 0 con intervalos inválidos', () => {
 })
 
 test('los filtros viajan por la URL sin valores vacíos ni fechas inválidas', () => {
-  const filtros = { ...filtrosVacios(), desde: '2026-10-01', plaza: ['pkey:lapaz', 'none'], equipo: 'id:abc' }
+  const filtros = { ...filtrosVacios(), desde: '2026-10-01', territorio: ['mun:1', 'none'], equipo: 'id:abc' }
   assert.deepEqual(filtrosAQuery(filtros), {
     desde: '2026-10-01',
-    ciudad: ['pkey:lapaz', 'none'],
+    municipio: ['mun:1', 'none'],
     equipo: 'id:abc',
   })
   assert.deepEqual(filtrosDesdeQuery(filtrosAQuery(filtros)), filtros)
-  assert.equal(filtrosDesdeQuery({ desde: 'ayer', ciudad: ['pkey:oruro', 'x'] }).desde, '')
-  assert.deepEqual(filtrosDesdeQuery({ ciudad: ['pkey:oruro', 'pkey:oruro', ' '] }).plaza, ['pkey:oruro'])
-  assert.deepEqual(filtrosDesdeQuery({ ciudad: 'pkey:oruro' }).plaza, ['pkey:oruro'])
+  assert.equal(filtrosDesdeQuery({ desde: 'ayer' }).desde, '')
+  assert.deepEqual(filtrosDesdeQuery({ municipio: ['mun:3', 'mun:3', ' '] }).territorio, ['mun:3'])
+  assert.deepEqual(filtrosDesdeQuery({ activador: 'uid:a' }).activador, ['uid:a'])
+  assert.deepEqual(filtrosDesdeQuery({ periodo: '7d', desde: '2026-10-01' }), { ...filtrosVacios(), periodo: '7d' }, 'un preset manda sobre el rango')
+  assert.equal(filtrosDesdeQuery({ periodo: '99d' }).periodo, '')
   assert.equal(hayFiltros(filtrosVacios()), false)
   assert.equal(hayFiltros(filtros), true)
 })
 
 test('sanearFiltros descarta valores que el catálogo del usuario no ofrece', () => {
   const opciones = {
-    plazas: [{ key: 'pkey:lapaz', nombre: 'La Paz' }],
+    territorios: [{ key: 'mun:1', nombre: 'La Paz' }],
+    zonas: [],
     activadores: [],
     equipos: [],
     lideres: [],
     tipos: [],
-    eventos: [],
   }
   const filtros = {
     ...filtrosVacios(),
     desde: '2026-10-01',
-    plaza: ['pkey:lapaz', 'pkey:ajena'],
+    territorio: ['mun:1', 'mun:999'],
     equipo: 'id:ajeno',
   }
-  assert.deepEqual(sanearFiltros(filtros, opciones), { ...filtros, plaza: ['pkey:lapaz'], equipo: '' })
+  assert.deepEqual(sanearFiltros(filtros, opciones), { ...filtros, territorio: ['mun:1'], equipo: '' })
+})
+
+test('resolverPeriodo convierte presets en fechas relativas a hoy', () => {
+  const hoy = { todayKey: '2026-11-20', monthKey: '2026-11', weekStartKey: '2026-11-16' }
+  const con = (cambios) => resolverPeriodo({ ...filtrosVacios(), ...cambios }, hoy)
+  assert.deepEqual(con({ periodo: 'hoy' }), { desde: '2026-11-20', hasta: '2026-11-20' })
+  assert.deepEqual(con({ periodo: '7d' }), { desde: '2026-11-14', hasta: '2026-11-20' })
+  assert.deepEqual(con({ periodo: '15d' }), { desde: '2026-11-06', hasta: '2026-11-20' })
+  assert.deepEqual(con({ periodo: 'mes' }), { desde: '2026-11-01', hasta: '2026-11-20' })
+  assert.deepEqual(con({ desde: '2026-10-01', hasta: '2026-10-31' }), { desde: '2026-10-01', hasta: '2026-10-31' })
+})
+
+test('los chips resumen las selecciones largas y el período en palabras', () => {
+  const muchos = Array.from({ length: 7 }, (_, i) => ({ key: `uid:${i}`, nombre: `A${i}` }))
+  assert.deepEqual(chipsSeleccion(muchos.map((o) => o.key), muchos, 'activadores').map((c) => c.texto), ['A0', 'A1', 'A2', 'A3', '+3 activadores'])
+  assert.equal(resumenPeriodo({ periodo: '', desde: '2026-11-01', hasta: '2026-11-15' }), '01/11/2026 – 15/11/2026')
+  assert.equal(resumenPeriodo({ periodo: '', desde: '', hasta: '' }), 'Todo el historial')
+})
+
+test('elegir un departamento o una plaza es una sola clave que incluye a sus municipios', async () => {
+  const { crearContexto } = await import('../src/lib/metrics/identidad.js')
+  const { clavesMunicipio, enSeleccion, gruposTerritorio, municipioEnSeleccion } = await import('../src/lib/metrics/territorio.js')
+  const ctx = crearContexto({
+    activaciones: [],
+    usuarios: [],
+    municipios: [
+      { id: 1, codigo_ine: '070101', nombre: 'Santa Cruz de la Sierra', departamento: 'Santa Cruz', plaza: 'Santa Cruz de la Sierra' },
+      { id: 2, codigo_ine: '071001', nombre: 'Montero', departamento: 'Santa Cruz', plaza: 'Montero' },
+      { id: 3, codigo_ine: '040101', nombre: 'Oruro', departamento: 'Oruro', plaza: 'Oruro' },
+    ],
+  })
+  assert.deepEqual(clavesMunicipio(2, ctx), { municipio: 'mun:2', departamento: 'dep:07', plaza: 'pla:Montero' })
+  assert.deepEqual(clavesMunicipio(null, ctx), { municipio: 'none', departamento: '', plaza: '' })
+  assert.equal(enSeleccion(['dep:07'], clavesMunicipio(2, ctx)), true)
+  assert.equal(enSeleccion(['dep:07'], clavesMunicipio(3, ctx)), false)
+  assert.equal(enSeleccion(['pla:Montero'], clavesMunicipio(1, ctx)), false)
+  assert.equal(enSeleccion(['none'], clavesMunicipio(null, ctx)), true)
+  assert.equal(municipioEnSeleccion('mun:1', ['dep:07'], ctx), true)
+  assert.deepEqual(gruposTerritorio(ctx).map((g) => [g.key, g.nombre]), [
+    ['dep:04', 'Oruro'],
+    ['pla:Montero', 'Plaza Montero'],
+    ['pla:Oruro', 'Plaza Oruro'],
+    ['pla:Santa Cruz de la Sierra', 'Plaza Santa Cruz de la Sierra'],
+    ['dep:07', 'Santa Cruz'],
+  ])
 })
 
 test('escalaEjeY elige pasos redondos con a lo sumo 8 intervalos', () => {
@@ -114,4 +163,82 @@ test('las columnas del ranking declaran su tipo y exponen Salidas y Comercios', 
     RANKING_COLUMNAS.map((c) => c.valor(fila)),
     ['Ana', 4, 4, 2, 1],
   )
+})
+
+test('el mapa cuenta por código INE de municipio o departamento y aparta lo no ubicado', async () => {
+  const { conteoPorPoligono, indicePoligonos, codigoPoligono } = await import('../src/lib/metrics/geo.js')
+  const { crearContexto } = await import('../src/lib/metrics/identidad.js')
+  const ctx = crearContexto({
+    activaciones: [],
+    usuarios: [],
+    municipios: [
+      { id: 1, codigo_ine: '020101', nombre: 'La Paz', departamento: 'La Paz', plaza: 'La Paz' },
+      { id: 2, codigo_ine: '020105', nombre: 'El Alto', departamento: 'La Paz', plaza: 'El Alto' },
+      { id: 3, codigo_ine: '040101', nombre: 'Oruro', departamento: 'Oruro', plaza: 'Oruro' },
+    ],
+  })
+  const filas = [{ municipio_id: 1 }, { municipio_id: 2 }, { municipio_id: 2 }, { municipio_id: 3 }, { municipio_id: null }, { municipio_id: 99 }]
+  const municipal = conteoPorPoligono(filas, ctx, 'municipio')
+  assert.deepEqual([...municipal.conteo], [['020101', 1], ['020105', 2], ['040101', 1]])
+  assert.equal(municipal.sinUbicar, 2)
+  assert.deepEqual([...conteoPorPoligono(filas, ctx, 'departamento').conteo], [['02', 3], ['04', 1]])
+  assert.deepEqual(indicePoligonos(ctx, 'departamento').get('02'), { nombre: 'La Paz', key: 'dep:02' })
+  assert.deepEqual(indicePoligonos(ctx, 'municipio').get('020105'), { nombre: 'El Alto', key: 'mun:2' })
+  const { codigosElegidos } = await import('../src/lib/metrics/geo.js')
+  assert.deepEqual([...codigosElegidos(['dep:02'], ctx, 'municipio')], ['020101', '020105'], 'un departamento elegido resalta sus municipios')
+  assert.deepEqual([...codigosElegidos(['mun:3'], ctx, 'departamento')], [])
+  assert.equal(codigoPoligono({ codigo_ine: '020101', departamento_ine: '02' }, 'departamento'), '02')
+})
+
+test('los archivos de geometría cubren los 339 municipios y 9 departamentos con punto de etiqueta', async () => {
+  const { readFileSync } = await import('node:fs')
+  const leer = (n) => JSON.parse(readFileSync(new URL(`../public/geo/${n}.geojson`, import.meta.url), 'utf8'))
+  const municipios = leer('municipios')
+  const departamentos = leer('departamentos')
+  assert.equal(new Set(municipios.features.map((f) => f.properties.codigo_ine)).size, 339)
+  assert.equal(departamentos.features.length, 9)
+  for (const f of [...municipios.features, ...departamentos.features]) assert.equal(f.properties.etiqueta.length, 2)
+  assert.match(municipios.fuente, /OCHA COD-AB/)
+})
+
+test('rendimiento por evento: act./activador-día, progreso de hoy y corte por período', async () => {
+  const { agruparPorEstado, calcularEventos, rangoEvento } = await import('../src/lib/metrics/rendimientoEventos.js')
+  const hoy = { todayKey: '2026-11-20', monthKey: '2026-11', weekStartKey: '2026-11-16' }
+  const evento = (id, estado, inicio, fin, activadores = 2) => ({
+    id, nombre: id, estado, inicio, fin, lugar: null,
+    activadores: Array.from({ length: activadores }, (_, i) => ({ id: `u${i}`, nombre: `U${i}`, desde: inicio })),
+  })
+  const eventos = [
+    evento('feria', 'en_curso', '2026-11-18T12:00:00Z', null),
+    evento('expo', 'finalizado', '2026-10-01T12:00:00Z', '2026-10-03T04:00:00Z'),
+    evento('futuro', 'programado', '2026-12-01T12:00:00Z', '2026-12-02T04:00:00Z'),
+  ]
+  const fila = (evento_id, usuario_id, fecha_activacion, created_at, extra = {}) => ({ evento_id, usuario_id, fecha_activacion, created_at, ...extra })
+  const filas = [
+    fila('feria', 'u0', '2026-11-19', '2026-11-19T14:00:00Z'),
+    fila('feria', 'u0', '2026-11-20', '2026-11-20T13:10:00Z'),
+    fila('feria', 'u0', '2026-11-20', '2026-11-20T13:40:00Z', { hubo_error: true }),
+    fila('feria', 'u1', '2026-11-20', '2026-11-20T15:05:00Z'),
+    fila('expo', 'u0', '2026-10-01', '2026-10-01T14:00:00Z'),
+    fila(null, 'u0', '2026-11-20', '2026-11-20T15:00:00Z'),
+  ]
+  const todos = calcularEventos({ eventos, filas, hoy, periodo: { desde: '', hasta: '' } })
+  const feria = todos.find((e) => e.id === 'feria')
+  assert.equal(feria.total, 4)
+  assert.equal(feria.porActivadorDia, 4 / 3, 'u0 trabajó 2 días y u1 uno')
+  assert.equal(feria.hoy, 3)
+  assert.equal(feria.activosHoy, 2)
+  assert.equal(feria.pctErrores, 0.25)
+  assert.equal(feria.ultima, '2026-11-20T15:05:00Z')
+  assert.equal(feria.porHoraHoy[9], 2, '13:10Z y 13:40Z son las 9 en La Paz')
+  assert.equal(feria.porHoraHoy[11], 1)
+
+  const noviembre = calcularEventos({ eventos, filas, hoy, periodo: { desde: '2026-11-01', hasta: '2026-11-20' } })
+  assert.deepEqual(noviembre.map((e) => e.id), ['feria'], 'solo eventos que se solapan con el período')
+  assert.deepEqual(calcularEventos({ eventos, filas, hoy, periodo: { desde: '', hasta: '' }, soloConActividad: true }).map((e) => e.id), ['feria', 'expo'])
+  assert.deepEqual(agruparPorEstado(todos).map((g) => g.estado), ['en_curso', 'programado', 'finalizado'])
+
+  assert.equal(rangoEvento(eventos[0], hoy), 'Desde 18 nov')
+  assert.equal(rangoEvento(eventos[1], hoy), '1–2 oct', 'un fin a medianoche cierra el día anterior')
+  assert.equal(rangoEvento({ inicio: '2025-12-30T12:00:00Z', fin: '2026-01-02T12:00:00Z' }, hoy), '30 dic 2025 – 2 ene')
 })

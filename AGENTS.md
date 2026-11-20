@@ -7,6 +7,7 @@
 - API: Express 5 in `server/app.js`, deployed as one Vercel function (`api/index.js`, `/api/*` rewrite, region `gru1`, next to Supabase). Locally: `npm run dev:api` + `npm run dev`.
 - Supabase backend. The API uses the service-role key, so RLS does not apply: scope access by hand. Portal roles: `administrador`, `lider`, `banco`; admin = `req.user.isAdmin` (`roles` includes `administrador`).
 - The mobile app (`../impulsa360-mobile`) writes to the same database.
+- `public/geo/*.geojson`: municipio and departamento polygons for the Metrics map, extracted from the `municipios.geom` migration (provenance in each file's `fuente`). Regenerate only if that geometry changes.
 
 ## Commands
 

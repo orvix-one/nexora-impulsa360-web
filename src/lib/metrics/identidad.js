@@ -1,12 +1,11 @@
 // @ts-check
-// Identity rules: ciudad = ciudad_activacion only (organizational plaza is team attribution, not geography);
+// Identity rules: territory = municipio_id located from GPS, named by the municipios catalog (organizational plaza is team attribution, not geography);
 // leader = snapshot lider_id_registro, else the creator's current leader, else none (never by name);
 // activator = usuario_id only; team = equipo_id_registro, else an unambiguous numero, else numero, else name.
 
 import {
   ciudadActivacion,
   etiquetaCiudadActivacion,
-  normalizarPlazaClave,
   SIN_CIUDAD_REGISTRADA,
 } from '../plazas.js'
 import { normalizado, texto } from './formato.js'
@@ -32,7 +31,7 @@ export const TIPOS_FUNCIONALES = [
  * @property {Map<string, string>} liderCatalogo leader id -> name, from the users catalog.
  * @property {Map<string, string>} activadorCatalogo activator id -> name, from the activations.
  * @property {{ porId: Map<string, { numero: string, nombre: string }>, numeroAId: Map<string, string> }} equipoCatalogo
- * @property {Map<string, string>} plazaPorCiudad normalized city key -> client plaza that groups it.
+ * @property {Map<number, import('./tipos.js').Municipio>} municipios
  */
 
 /** @param {Usuario | undefined} usuario */
@@ -50,8 +49,8 @@ export function rolesCatalogo(usuario) {
   ]
 }
 
-/** @param {{ activaciones: Activacion[], usuarios: Usuario[], ciudadesPorPlaza?: { ciudad: string, plaza: string }[] }} datos @returns {Contexto} */
-export function crearContexto({ activaciones, usuarios, ciudadesPorPlaza = [] }) {
+/** @param {{ activaciones: Activacion[], usuarios: Usuario[], municipios?: import('./tipos.js').Municipio[] }} datos @returns {Contexto} */
+export function crearContexto({ activaciones, usuarios, municipios = [] }) {
   const usuariosPorId = new Map(
     usuarios.map((usuario) => [texto(usuario.usuario_id).toLowerCase(), usuario]),
   )
@@ -95,7 +94,7 @@ export function crearContexto({ activaciones, usuarios, ciudadesPorPlaza = [] })
     liderCatalogo,
     activadorCatalogo,
     equipoCatalogo: catalogarEquipos(activaciones),
-    plazaPorCiudad: new Map(ciudadesPorPlaza.map(({ ciudad, plaza }) => [normalizarPlazaClave(ciudad), plaza])),
+    municipios: new Map(municipios.map((municipio) => [Number(municipio.id), municipio])),
   }
 }
 
@@ -143,9 +142,14 @@ export function etiquetaConEstado(usuario, etiqueta) {
 }
 
 /** @param {Activacion} item */
-export function plazaKey(item) {
-  const nombre = ciudadActivacion(item)
-  return nombre ? `pkey:${normalizarPlazaClave(nombre)}` : 'none'
+export function territorioKey(item) {
+  const id = Number(item.municipio_id)
+  return Number.isInteger(id) && id > 0 ? `mun:${id}` : 'none'
+}
+
+/** @param {Activacion} item @param {Contexto} ctx */
+export function territorioEtiqueta(item, ctx) {
+  return ctx.municipios.get(Number(item.municipio_id))?.nombre ?? plazaEtiqueta(item)
 }
 
 /** @param {Activacion} item */

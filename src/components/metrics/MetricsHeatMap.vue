@@ -85,5 +85,12 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div ref="mapElement" class="metrics-heat-map" aria-label="Mapa de calor de activaciones"></div>
+  <div ref="mapElement" class="metrics-heat-map mapa-aislado" aria-label="Mapa de calor de activaciones"></div>
 </template>
+
+<style scoped>
+/* Leaflet panes use z-index 400+; isolating the map keeps the filter popovers above it. */
+.mapa-aislado {
+  isolation: isolate;
+}
+</style>

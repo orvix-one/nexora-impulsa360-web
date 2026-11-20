@@ -1,8 +1,7 @@
 // @ts-check
 
-import { SIN_CIUDAD_REGISTRADA } from '../plazas.js'
 import { diasEntre, fechaRegistro, monthRegistro, weekRegistro } from './fechas.js'
-import { claveFiltrable, coincideFiltros } from './filtros.js'
+import { claveFiltrable, coincideFiltros, filtrosEfectivos, opcionTerritorio } from './filtros.js'
 import { normalizado, texto } from './formato.js'
 import {
   activadorEtiqueta,
@@ -11,7 +10,7 @@ import {
   esComercioNuevo,
   equipoEtiqueta,
   liderEtiqueta,
-  plazaEtiqueta,
+  territorioEtiqueta,
   TIPOS_FUNCIONALES,
   tipoKey,
 } from './identidad.js'
@@ -54,9 +53,10 @@ function coordenadas(item) {
 }
 
 /**
- * @param {{ activaciones: Activacion[], ctx: Contexto, filtros: Filtros, hoy: Hoy }} datos
+ * @param {{ activaciones: Activacion[], ctx: Contexto, filtros: Filtros, hoy: Hoy, tab?: string }} datos
  */
-export function calcularDashboard({ activaciones, ctx, filtros, hoy }) {
+export function calcularDashboard({ activaciones, ctx, filtros: seleccion, hoy, tab }) {
+  const filtros = filtrosEfectivos(seleccion, hoy, tab)
   const { todayKey, monthKey, weekStartKey } = hoy
   /** @type {Activacion[]} */ const rows = []
   /** @type {{ lat: number, lng: number, label: string }[]} */ const points = []
@@ -64,7 +64,9 @@ export function calcularDashboard({ activaciones, ctx, filtros, hoy }) {
     dia: new Map(),
     semana: new Map(),
     mes: new Map(),
-    plaza: new Map(),
+    territorio: new Map(),
+    departamento: new Map(),
+    plazaCliente: new Map(),
     tipo: new Map(),
     lider: new Map(),
     clasificacion: new Map(),
@@ -90,7 +92,7 @@ export function calcularDashboard({ activaciones, ctx, filtros, hoy }) {
   const teamStats = new Map()
   const teamMonthStats = new Map()
   const activadoresUnicos = new Set()
-  const nombresPlaza = new Map([['none', SIN_CIUDAD_REGISTRADA]])
+  const nombresTerritorio = new Map()
   const nombresActivador = new Map([['none', 'Sin activador']])
   const nombresTipo = new Map([
     ['none', 'Sin especificar'],
@@ -101,8 +103,8 @@ export function calcularDashboard({ activaciones, ctx, filtros, hoy }) {
     const fecha = fechaRegistro(item)
     const claves = claveFiltrable(item, ctx)
     if (!coincideFiltros(fecha, claves, filtros)) continue
-    const { plaza, activador, tipo, lider, equipo } = claves
-    const plazaDisplay = plazaEtiqueta(item)
+    const { territorio, activador, tipo, lider, equipo } = claves
+    const territorioDisplay = territorioEtiqueta(item, ctx)
     const activadorDisplay = activadorEtiqueta(item, activador, ctx)
     const liderDisplay = liderEtiqueta(item, lider, ctx)
     const equipoNombre = equipoEtiqueta(item, equipo, ctx)
@@ -111,7 +113,7 @@ export function calcularDashboard({ activaciones, ctx, filtros, hoy }) {
     const conError = item.hubo_error === true
     rows.push(item)
     if (activador !== 'none') activadoresUnicos.add(activador)
-    if (!nombresPlaza.has(plaza)) nombresPlaza.set(plaza, plazaDisplay)
+    if (!nombresTerritorio.has(territorio)) nombresTerritorio.set(territorio, opcionTerritorio(item, ctx))
     if (!nombresActivador.has(activador)) nombresActivador.set(activador, activadorDisplay)
     if (tipo !== 'none' && !nombresTipo.has(tipo))
       nombresTipo.set(tipo, texto(item.tipo_activacion))
@@ -128,7 +130,10 @@ export function calcularDashboard({ activaciones, ctx, filtros, hoy }) {
     sumar(maps.dia, fecha || 'Sin fecha')
     sumar(maps.semana, weekRegistro(fecha))
     sumar(maps.mes, monthRegistro(fecha))
-    sumar(maps.plaza, plaza)
+    sumar(maps.territorio, territorio)
+    const { departamento, plaza } = nombresTerritorio.get(territorio)
+    sumar(maps.departamento, departamento || 'Sin departamento')
+    sumar(maps.plazaCliente, plaza || 'Sin plaza')
     const estadistica = estadisticasActivador.get(activador) ?? {
       value: 0,
       dias: new Set(),
@@ -167,7 +172,7 @@ export function calcularDashboard({ activaciones, ctx, filtros, hoy }) {
     if (comercio) teamMonth.comercios.add(normalizado(comercio))
     teamMonthStats.set(teamMonthKey, teamMonth)
     const punto = coordenadas(item)
-    if (punto) points.push({ ...punto, label: `${activadorDisplay} · ${plazaDisplay}` })
+    if (punto) points.push({ ...punto, label: `${activadorDisplay} · ${territorioDisplay}` })
   }
   const porEquipo = [...teamStats.values()]
     .map((team) => ({
@@ -220,7 +225,9 @@ export function calcularDashboard({ activaciones, ctx, filtros, hoy }) {
     porEquipo,
     resumenEquipoMes,
     porDia: ranking(maps.dia).sort((a, b) => a.label.localeCompare(b.label)),
-    porPlaza: traducir(ranking(maps.plaza), nombresPlaza),
+    porMunicipio: traducir(ranking(maps.territorio), new Map([...nombresTerritorio].map(([k, o]) => [k, o.nombre]))),
+    porDepartamento: traducir(ranking(maps.departamento), new Map()),
+    porPlazaCliente: traducir(ranking(maps.plazaCliente), new Map()),
     topActivadores: construirRanking({
       ctx,
       filtros,

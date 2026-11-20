@@ -10,7 +10,7 @@ import {
 import { fetchActivaciones } from '../server/activacionesExportacion.js'
 import { COLUMNAS_EXCEL, generarExcel } from '../src/lib/reportes/excel.js'
 import { crearContexto } from '../src/lib/metrics/identidad.js'
-import { agruparOpciones, construirOpciones } from '../src/lib/metrics/filtros.js'
+import { construirOpciones } from '../src/lib/metrics/filtros.js'
 
 const componentSource = readFileSync(new URL('../src/components/ActivacionesTable.vue', import.meta.url), 'utf8')
 const identidadSource = readFileSync(new URL('../src/lib/metrics/identidad.js', import.meta.url), 'utf8')
@@ -150,10 +150,11 @@ test('el listado, el detalle y las exportaciones del portal usan la misma ciudad
   assert.equal(columnaCiudad({ ciudad_activacion: 'el_alto', plaza_efectiva_registro: 'La Paz' }), 'El Alto')
 })
 
-test('el dashboard calcula la ciudad solo desde ciudad_activacion', () => {
-  const inicio = identidadSource.indexOf('export function plazaKey(')
+test('el dashboard ubica por municipio del GPS y nombra con ciudad_activacion como respaldo', () => {
+  const inicio = identidadSource.indexOf('export function territorioKey(')
   const fin = identidadSource.indexOf('export function plazaRegistro(', inicio)
   const cuerpo = identidadSource.slice(inicio, fin)
+  assert.match(cuerpo, /item\.municipio_id/)
   assert.match(cuerpo, /ciudadActivacion\(item\)/)
   assert.doesNotMatch(cuerpo, /plaza_efectiva_registro|plaza_base_registro|texto\(item\.plaza\)/)
   assert.match(identidadSource, /export function plazaRegistro\(item\) \{\n {2}return etiquetaCiudadActivacion\(item\)\n\}/)
@@ -177,22 +178,30 @@ test('el filtro del listado normaliza la ciudad igual que la exportación', () =
   assert.doesNotMatch(componentSource, /const activacionesFiltradas = computed\(/, 'la tabla no filtra en el navegador')
 })
 
-test('el filtro de ciudad agrupa los municipios por plaza y solo ofrece ciudades con activaciones', () => {
+test('el filtro de territorio agrupa municipios por departamento o plaza y solo ofrece los que tienen activaciones', () => {
   const ctx = crearContexto({
     activaciones: [
-      { id: 'a', ciudad_activacion: 'Puerto Quijarro' },
-      { id: 'b', ciudad_activacion: 'Santa Cruz de la Sierra' },
-      { id: 'c', ciudad_activacion: 'Sacaba' },
+      { id: 'a', municipio_id: 7, ciudad_activacion: 'Puerto Quijarro' },
+      { id: 'b', municipio_id: 1, ciudad_activacion: 'Santa Cruz de la Sierra' },
+      { id: 'c', municipio_id: 9, ciudad_activacion: 'Sacaba' },
     ],
     usuarios: [],
-    ciudadesPorPlaza: [{ ciudad: 'Santa Cruz de la Sierra', plaza: 'Santa Cruz de la Sierra' }, { ciudad: 'Cochabamba', plaza: 'Cochabamba' }],
+    municipios: [
+      { id: 1, codigo_ine: '070101', nombre: 'Santa Cruz de la Sierra', departamento: 'Santa Cruz', plaza: 'Santa Cruz de la Sierra' },
+      { id: 7, codigo_ine: '070803', nombre: 'Puerto Quijarro', departamento: 'Santa Cruz', plaza: 'Santa Cruz de la Sierra' },
+      { id: 9, codigo_ine: '030901', nombre: 'Sacaba', departamento: 'Cochabamba', plaza: 'Cochabamba' },
+      { id: 4, codigo_ine: '030101', nombre: 'Cochabamba', departamento: 'Cochabamba', plaza: 'Cochabamba' },
+    ],
   })
-  const grupos = agruparOpciones(construirOpciones(ctx).plazas)
-  assert.deepEqual(grupos.map((g) => [g.nombre, g.opciones.map((o) => o.nombre)]), [
-    ['Santa Cruz de la Sierra', ['Santa Cruz de la Sierra']],
-    ['Sin plaza', ['Puerto Quijarro', 'Sacaba']],
-  ])
-  assert.match(cargaMetricasSource, /solicitar\('\/portal\/ciudades-por-plaza'\)/)
+  const { territorios } = construirOpciones(ctx)
+  const municipios = territorios.filter((o) => o.nivel === 'municipio')
+  assert.deepEqual(municipios.map((o) => [o.nombre, o.grupos]), [
+    ['Puerto Quijarro', ['dep:07', 'pla:Santa Cruz de la Sierra']],
+    ['Sacaba', ['dep:03', 'pla:Cochabamba']],
+    ['Santa Cruz de la Sierra', ['dep:07', 'pla:Santa Cruz de la Sierra']],
+  ], 'Cochabamba no tiene activaciones y no se ofrece como municipio')
+  assert.deepEqual(territorios.filter((o) => o.nivel === 'departamento').map((o) => o.key), ['dep:03', 'dep:07'])
+  assert.match(cargaMetricasSource, /'\/portal\/municipios'/)
 })
 
 test('respeta tildes y eñes de los municipios y solo reconstruye claves en minúsculas', () => {
@@ -205,16 +214,16 @@ test('el filtro de barrio ofrece los barrios de cada ciudad y filtra por ciudad 
   const { claveFiltrable, coincideFiltros, filtrosVacios } = await import('../src/lib/metrics/filtros.js')
   const ctx = crearContexto({
     activaciones: [
-      { id: 'a', ciudad_activacion: 'La Paz', zona_activacion: 'Chasquipampa' },
-      { id: 'b', ciudad_activacion: 'La Paz', zona_activacion: 'chasquipampa ' },
-      { id: 'c', ciudad_activacion: 'El Alto', zona_activacion: 'Chasquipampa' },
-      { id: 'd', ciudad_activacion: 'La Paz', zona_activacion: null },
+      { id: 'a', municipio_id: 1, ciudad_activacion: 'La Paz', zona_activacion: 'Chasquipampa' },
+      { id: 'b', municipio_id: 1, ciudad_activacion: 'La Paz', zona_activacion: 'chasquipampa ' },
+      { id: 'c', municipio_id: 2, ciudad_activacion: 'El Alto', zona_activacion: 'Chasquipampa' },
+      { id: 'd', municipio_id: 1, ciudad_activacion: 'La Paz', zona_activacion: null },
     ],
     usuarios: [],
   })
   const { zonas } = construirOpciones(ctx)
-  assert.deepEqual(zonas.map((z) => [z.ciudad, z.nombre]), [['pkey:lapaz', 'Chasquipampa'], ['pkey:elalto', 'Chasquipampa']])
-  const filtros = { ...filtrosVacios(), plaza: 'pkey:lapaz', zona: zonas[0].key }
+  assert.deepEqual(zonas.map((z) => [z.ciudad, z.nombre]), [['mun:1', 'Chasquipampa'], ['mun:2', 'Chasquipampa']])
+  const filtros = { ...filtrosVacios(), territorio: ['mun:1'], zona: zonas[0].key }
   const coinciden = ctx.activaciones.filter((item) => coincideFiltros('', claveFiltrable(item, ctx), filtros)).map((item) => item.id)
   assert.deepEqual(coinciden, ['a', 'b'])
 })

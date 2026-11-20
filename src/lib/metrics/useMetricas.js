@@ -13,11 +13,12 @@ import {
   construirOpciones,
   filtrosAQuery,
   filtrosDesdeQuery,
-  filtrosVacios,
   hayFiltros,
+  limpiarAmbito,
   sanearFiltros,
 } from './filtros.js'
 import { crearContexto } from './identidad.js'
+import { municipioEnSeleccion } from './territorio.js'
 
 const CLAVE = Symbol('metricas')
 
@@ -30,22 +31,33 @@ export function proveerMetricas() {
   const cargando = ref(true)
   const error = ref(/** @type {string | null} */ (null))
   const datos = shallowRef(
-    /** @type {{ activaciones: import('./tipos.js').Activacion[], usuarios: import('./tipos.js').Usuario[], ciudadesPorPlaza: { ciudad: string, plaza: string }[] }} */ ({
+    /** @type {{ activaciones: import('./tipos.js').Activacion[], usuarios: import('./tipos.js').Usuario[], municipios: import('./tipos.js').Municipio[], eventos: import('./tipos.js').Evento[] }} */ ({
       activaciones: [],
       usuarios: [],
-      ciudadesPorPlaza: [],
+      municipios: [],
+      eventos: [],
     }),
   )
-  const hoy = calendarioHoy()
+  const hoy = ref(calendarioHoy())
+  const actualizadoEn = ref(/** @type {Date | null} */ (null))
+  const actualizando = ref(false)
   const filtros = reactive(filtrosDesdeQuery(route.query))
+  const tab = computed(() => route.path.split('/').filter(Boolean).at(-1) ?? '')
 
   const ctx = computed(() => crearContexto(datos.value))
   const opciones = computed(() => construirOpciones(ctx.value))
   const dashboard = computed(() =>
-    calcularDashboard({ activaciones: datos.value.activaciones, ctx: ctx.value, filtros, hoy }),
+    calcularDashboard({ activaciones: datos.value.activaciones, ctx: ctx.value, filtros, hoy: hoy.value, tab: tab.value }),
   )
-  const hayFiltrosActivos = computed(() => hayFiltros(filtros))
+  const hayFiltrosActivos = computed(() => hayFiltros(filtros, 'global'))
 
+  watch(
+    () => filtros.territorio,
+    (territorio) => {
+      const ciudad = opciones.value.zonas.find((o) => o.key === filtros.zona)?.ciudad
+      if (filtros.zona && ciudad && !municipioEnSeleccion(ciudad, territorio, ctx.value)) filtros.zona = ''
+    },
+  )
   watch(filtros, () => {
     const query = filtrosAQuery(filtros)
     if (!mismaQuery(query, filtrosAQuery(filtrosDesdeQuery(route.query)))) router.replace({ query })
@@ -59,13 +71,19 @@ export function proveerMetricas() {
     },
   )
 
+  async function cargar() {
+    datos.value = await cargarDatosMetricas({
+      fetchActivaciones: fetchMetricasActivaciones,
+      solicitar: apiRequest,
+      registrarError: logClientError,
+    })
+    hoy.value = calendarioHoy()
+    actualizadoEn.value = new Date()
+  }
+
   onMounted(async () => {
     try {
-      datos.value = await cargarDatosMetricas({
-        fetchActivaciones: fetchMetricasActivaciones,
-        solicitar: apiRequest,
-        registrarError: logClientError,
-      })
+      await cargar()
       Object.assign(filtros, sanearFiltros({ ...filtros }, opciones.value))
     } catch (causa) {
       logClientError('metricas.fetch', causa)
@@ -75,8 +93,22 @@ export function proveerMetricas() {
     }
   })
 
-  function limpiarFiltros() {
-    Object.assign(filtros, filtrosVacios())
+  // A failed refresh keeps the data already on screen.
+  async function actualizar() {
+    if (actualizando.value || cargando.value) return
+    actualizando.value = true
+    try {
+      await cargar()
+    } catch (causa) {
+      logClientError('metricas.refresh', causa)
+    } finally {
+      actualizando.value = false
+    }
+  }
+
+  /** @param {'global' | 'resumen' | 'campo'} ambito */
+  function limpiarFiltros(ambito = 'global') {
+    limpiarAmbito(filtros, ambito)
   }
 
   function exportar() {
@@ -95,7 +127,12 @@ export function proveerMetricas() {
     error,
     datos,
     hoy,
+    tab,
+    ctx,
     filtros,
+    actualizadoEn,
+    actualizando,
+    actualizar,
     opciones,
     dashboard,
     hayFiltros: hayFiltrosActivos,
