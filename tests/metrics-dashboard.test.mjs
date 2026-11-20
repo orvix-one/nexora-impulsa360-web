@@ -106,7 +106,7 @@ test('mantiene filtros de fechas, plaza, tipo y activador sobre el mismo corte',
   vm.filtros.activador = `uid:${activador}`
   vm.filtros.desde = '2026-10-02'
   vm.filtros.hasta = '2026-10-04'
-  vm.filtros.plaza = 'pkey:lapaz'
+  vm.filtros.plaza = ['pkey:lapaz']
   vm.filtros.tipo = 'comercio'
   await assertCount(vm, 3)
   for (const [clave, value] of [
@@ -193,7 +193,7 @@ test('ranking general incluye todo el catálogo sin excluir inhabilitados, dedup
   )
   vm.filtros.activador = ''
   vm.filtros.desde = '2027-01-01'
-  vm.filtros.plaza = 'pkey:oruro'
+  vm.filtros.plaza = ['pkey:oruro']
   vm.filtros.tipo = 'otro'
   await assertCount(vm, 0)
   assert.deepEqual(
@@ -416,13 +416,13 @@ test('la ciudad geográfica prevalece sobre la plaza organizacional en selector,
   )
   assert.equal(barras.none, 2, 'ciudad NULL o vacía agrupa en "Sin ciudad registrada"')
 
-  vm.filtros.plaza = 'pkey:elalto'
+  vm.filtros.plaza = ['pkey:elalto']
   await assertCount(vm, 2)
   assert.ok((await vm.csv()).includes('El Alto'))
-  vm.filtros.plaza = 'none'
+  vm.filtros.plaza = ['none']
   await assertCount(vm, 2)
   assert.ok((await vm.csv()).includes(SIN_CIUDAD_REGISTRADA))
-  vm.filtros.plaza = ''
+  vm.filtros.plaza = []
   await assertCount(vm, 5)
 })
 
@@ -508,11 +508,11 @@ test('promedios recalculan con filtros no de fecha sobre el mismo período', asy
   vm.filtros.hasta = '2026-10-05'
   await assertCount(vm, 5)
   assert.equal(vm.dashboard.promedios.calendarioDiario, 1) // 5 / 5
-  vm.filtros.plaza = 'pkey:oruro'
+  vm.filtros.plaza = ['pkey:oruro']
   await assertCount(vm, 0)
   assert.equal(vm.dashboard.promedios.calendarioDiario, 0) // protegido: 0 / 5
   assert.equal(vm.dashboard.promedios.calendarioSemanal, 0)
-  vm.filtros.plaza = 'pkey:lapaz'
+  vm.filtros.plaza = ['pkey:lapaz']
   await assertCount(vm, 5)
   assert.equal(vm.dashboard.promedios.calendarioDiario, 1)
   vm.filtros.tipo = 'no-existe'
@@ -638,4 +638,31 @@ test('Comercios cuenta tienda de barrio y comercio con subtipo comercio o limbo'
   assert.equal(fila.comercios, combinaciones.filter(([, , cuenta]) => cuenta).length)
   vm.filtros.tipo = 'limbo'
   assert.equal(vm.dashboard.topActivadores[0].comercios, 2)
+})
+
+test('filtro de evento y plaza múltiple', async () => {
+  const evento = '60000000-0000-0000-0000-00000000000A'
+  const finalizado = '60000000-0000-0000-0000-00000000000B'
+  const data = rows.map((row, i) => ({
+    ...row,
+    ciudad_activacion: i < 2 ? 'Oruro' : row.ciudad_activacion,
+    evento_id: [evento, finalizado][i] ?? null,
+    evento_nombre: ['Zona Sur', 'Antigua'][i],
+    evento_estado: ['en_curso', 'finalizado'][i],
+  }))
+  const vm = montar(data)
+  assert.deepEqual(
+    vm.opciones.eventos.map((o) => [o.grupo, o.nombre]),
+    [['En curso', 'Zona Sur'], ['Finalizado', 'Antigua'], [undefined, 'Sin evento']],
+  )
+  vm.filtros.evento = `eid:${evento.toLowerCase()}`
+  await assertCount(vm, 1)
+  vm.filtros.evento = 'none'
+  await assertCount(vm, 3)
+  vm.filtros.evento = ''
+  vm.filtros.plaza = ['pkey:oruro']
+  await assertCount(vm, 2)
+  vm.filtros.plaza = ['pkey:oruro', 'pkey:lapaz']
+  await assertCount(vm, 5)
+  assert.deepEqual(montar().opciones.eventos, [], 'sin eventos el filtro no se ofrece')
 })

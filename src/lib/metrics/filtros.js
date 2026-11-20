@@ -1,5 +1,6 @@
 // @ts-check
 
+import { ESTADOS_EVENTO, etiquetaEstadoEvento } from '../eventos.js'
 import { normalizarPlazaClave } from '../plazas.js'
 import { texto } from './formato.js'
 import {
@@ -22,8 +23,8 @@ export const SIN_PLAZA = 'Sin plaza'
 /** @param {string | undefined} grupo */
 const ordenGrupo = (grupo) => (grupo === SIN_PLAZA ? '\uffff' : grupo ?? '')
 
-/** City options arrive sorted by group; consecutive runs become one optgroup. @param {Opcion[]} opciones */
-export function agruparPorPlaza(opciones) {
+/** Options arrive sorted by group; consecutive runs become one optgroup. @param {Opcion[]} opciones */
+export function agruparOpciones(opciones) {
   /** @type {{ nombre: string, opciones: Opcion[] }[]} */
   const grupos = []
   for (const opcion of opciones) {
@@ -42,7 +43,8 @@ export function agruparPorPlaza(opciones) {
  * @property {string} param URL query parameter.
  * @property {string} label
  * @property {'fecha' | 'seleccion'} tipo
- * @property {'plazas' | 'zonas' | 'activadores' | 'equipos' | 'lideres' | 'tipos'} [opciones] Option list of a select.
+ * @property {'plazas' | 'zonas' | 'activadores' | 'equipos' | 'lideres' | 'tipos' | 'eventos'} [opciones] Option list of a select.
+ * @property {boolean} [multiple] Value is a list of keys; an empty list means no filter.
  * @property {string} [vacio] Label of the "no filter" option.
  * @property {boolean} [ocultarSinOpciones] Hide the control when its option list is empty.
  */
@@ -54,9 +56,10 @@ export const FILTROS = [
   {
     key: 'plaza',
     param: 'ciudad',
-    label: 'Ciudad de activación',
+    label: 'Plaza / municipio',
     tipo: 'seleccion',
     opciones: 'plazas',
+    multiple: true,
     vacio: 'Todas',
   },
   {
@@ -100,54 +103,85 @@ export const FILTROS = [
     opciones: 'tipos',
     vacio: 'Todos',
   },
+  {
+    key: 'evento',
+    param: 'evento',
+    label: 'Evento',
+    tipo: 'seleccion',
+    opciones: 'eventos',
+    vacio: 'Todos',
+    ocultarSinOpciones: true,
+  },
 ]
 
 const FECHA_ISO = /^\d{4}-\d{2}-\d{2}$/
 const MAX_VALOR = 200
+const MAX_SELECCION = 100
+
+/** @param {string | string[]} valor */
+const tieneValor = (valor) => (Array.isArray(valor) ? valor.length > 0 : Boolean(valor))
+
+/** @param {unknown} raw */
+const limpiar = (raw) => (typeof raw === 'string' ? raw.trim().slice(0, MAX_VALOR) : '')
 
 /** @returns {Filtros} */
 export function filtrosVacios() {
-  return { desde: '', hasta: '', plaza: '', zona: '', activador: '', tipo: '', lider: '', equipo: '' }
+  return { desde: '', hasta: '', plaza: [], zona: '', activador: '', tipo: '', lider: '', equipo: '', evento: '' }
 }
 
 /** @param {Filtros} filtros */
 export function hayFiltros(filtros) {
-  return FILTROS.some(({ key }) => Boolean(filtros[key]))
+  return FILTROS.some(({ key }) => tieneValor(filtros[key]))
 }
 
 /** @param {Record<string, unknown>} query vue-router `route.query`. @returns {Filtros} */
 export function filtrosDesdeQuery(query) {
+  /** @type {Record<string, string | string[]>} */
   const filtros = filtrosVacios()
-  for (const { key, param, tipo } of FILTROS) {
-    const raw = Array.isArray(query[param]) ? query[param][0] : query[param]
-    const valor = typeof raw === 'string' ? raw.trim().slice(0, MAX_VALOR) : ''
+  for (const { key, param, tipo, multiple } of FILTROS) {
+    const raw = query[param]
+    if (multiple) {
+      const valores = (Array.isArray(raw) ? raw : [raw]).map(limpiar).filter(Boolean)
+      filtros[key] = [...new Set(valores)].slice(0, MAX_SELECCION)
+      continue
+    }
+    const valor = limpiar(Array.isArray(raw) ? raw[0] : raw)
     filtros[key] = tipo === 'fecha' && !FECHA_ISO.test(valor) ? '' : valor
   }
-  return filtros
+  return /** @type {Filtros} */ (filtros)
 }
 
-/** @param {Filtros} filtros @returns {Record<string, string>} */
+/** @param {Filtros} filtros @returns {Record<string, string | string[]>} */
 export function filtrosAQuery(filtros) {
-  /** @type {Record<string, string>} */
+  /** @type {Record<string, string | string[]>} */
   const query = {}
-  for (const { key, param } of FILTROS) if (filtros[key]) query[param] = filtros[key]
+  for (const { key, param } of FILTROS) if (tieneValor(filtros[key])) query[param] = filtros[key]
   return query
 }
 
 /** @param {Filtros} filtros @param {ReturnType<typeof construirOpciones>} opciones @returns {Filtros} */
 export function sanearFiltros(filtros, opciones) {
+  /** @type {Record<string, string | string[]>} */
   const saneados = { ...filtros }
   for (const { key, opciones: lista } of FILTROS) {
-    if (!lista || !saneados[key]) continue
-    if (!opciones[lista].some((opcion) => opcion.key === saneados[key])) saneados[key] = ''
+    const valor = saneados[key]
+    if (!lista || !tieneValor(valor)) continue
+    const validas = new Set(opciones[lista].map((opcion) => opcion.key))
+    saneados[key] = Array.isArray(valor) ? valor.filter((v) => validas.has(v)) : validas.has(valor) ? valor : ''
   }
-  return saneados
+  return /** @type {Filtros} */ (saneados)
 }
 
 /** @param {Activacion} item */
 export function zonaKey(item) {
   const clave = normalizarPlazaClave(item.zona_activacion)
   return clave ? `${plazaKey(item)}|${clave}` : ''
+}
+
+/** @param {Activacion} item */
+export function eventoKey(item) {
+  const id = texto(item.evento_id).toLowerCase()
+  return id ? `eid:${id}` : 'none'
 }
 
 /** @param {Activacion} item @param {Contexto} ctx */
@@ -159,6 +193,7 @@ export function claveFiltrable(item, ctx) {
     tipo: tipoKey(item),
     lider: liderKey(item, ctx),
     equipo: equipoKey(item, ctx),
+    evento: eventoKey(item),
   }
 }
 
@@ -170,12 +205,13 @@ export function claveFiltrable(item, ctx) {
 export function coincideFiltros(fecha, claves, filtros) {
   if (filtros.desde && (!fecha || fecha < filtros.desde)) return false
   if (filtros.hasta && (!fecha || fecha > filtros.hasta)) return false
-  if (filtros.plaza && claves.plaza !== filtros.plaza) return false
+  if (filtros.plaza.length && !filtros.plaza.includes(claves.plaza)) return false
   if (filtros.zona && claves.zona !== filtros.zona) return false
   if (filtros.activador && claves.activador !== filtros.activador) return false
   if (filtros.tipo && claves.tipo !== filtros.tipo) return false
   if (filtros.lider && claves.lider !== filtros.lider) return false
   if (filtros.equipo && claves.equipo !== filtros.equipo) return false
+  if (filtros.evento && claves.evento !== filtros.evento) return false
   return true
 }
 
@@ -209,7 +245,15 @@ export function construirOpciones(ctx) {
   /** @type {Map<string, Opcion>} */ const tipos = new Map()
   /** @type {Map<string, Opcion>} */ const lideres = new Map()
   /** @type {Map<string, Opcion>} */ const equipos = new Map()
+  /** @type {Map<string, Opcion>} */ const eventos = new Map()
   for (const item of ctx.activaciones) {
+    const evento = eventoKey(item)
+    if (evento !== 'none' && !eventos.has(evento))
+      eventos.set(evento, {
+        key: evento,
+        nombre: texto(item.evento_nombre) || 'Evento sin nombre',
+        grupo: etiquetaEstadoEvento(texto(item.evento_estado) || 'finalizado'),
+      })
     const plaza = plazaKey(item)
     if (!plazas.has(plaza)) plazas.set(plaza, { key: plaza, nombre: plazaEtiqueta(item) })
     const zona = zonaKey(item)
@@ -293,7 +337,16 @@ export function construirOpciones(ctx) {
     tipos: ordenar(tipos.values()),
     lideres: ordenar(lideres.values()),
     equipos: ordenarEquipos(equipos.values()),
+    eventos: eventos.size ? [...ordenarEventos(eventos.values()), { key: 'none', nombre: 'Sin evento' }] : [],
   }
+}
+
+const ORDEN_ESTADO = ESTADOS_EVENTO.map((estado) => estado.label)
+
+/** @param {Iterable<Opcion>} entries */
+function ordenarEventos(entries) {
+  const rango = (/** @type {Opcion} */ o) => ORDEN_ESTADO.indexOf(o.grupo ?? '')
+  return [...entries].sort((a, b) => rango(a) - rango(b) || a.nombre.localeCompare(b.nombre, 'es'))
 }
 
 /** @param {Iterable<Opcion>} entries */

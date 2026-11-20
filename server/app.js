@@ -12,7 +12,7 @@ import { abrirFuentePostgres, respaldarDb, RESPALDO_ESTADO_KEY } from './respald
 import { aplicarFiltrosActivaciones, crearCatalogoCiudades, normalizarFiltros, resolverCiudadesFiltro } from './activacionesFiltros.js'
 import { SELECT_LISTADO_ACTIVACIONES, parsearPagina } from './activacionesListado.js'
 import { parsearAliasesPlaza } from '../src/lib/plazas.js'
-import { cargarActivacionesMetricas } from './metricasActivaciones.js'
+import { adjuntarEvento, cargarActivacionesMetricas } from './metricasActivaciones.js'
 import { nombresMunicipios, registrarRutasViajes } from './viajes.js'
 import { registrarRutasLugares } from './lugares.js'
 import { registrarRutasEventos } from './eventos.js'
@@ -1406,7 +1406,10 @@ export function createAdminApiApp({
     }
     let activations
     try {
-      activations = await cargarActivacionesMetricas({ construirConsulta, pageSize: metricsPageSize })
+      activations = await adjuntarEvento(
+        adminSupabase,
+        await cargarActivacionesMetricas({ construirConsulta, pageSize: metricsPageSize }),
+      )
     } catch (error) {
       jsonError(res, 500, 'No se pudo obtener activaciones.', error?.message)
       return

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { cargarActivacionesMetricas, ejecutarConConcurrencia } from '../server/metricasActivaciones.js'
+import { adjuntarEvento, cargarActivacionesMetricas, ejecutarConConcurrencia } from '../server/metricasActivaciones.js'
 import { ACT, TOKENS, startPortal } from './helpers/portalApp.mjs'
 
 async function conPortal(fn, { tables, appOptions } = {}) {
@@ -164,4 +164,28 @@ test('cargarActivacionesMetricas: alcance sin autorizacion devuelve vacio y los 
   assert.deepEqual(await cargarActivacionesMetricas({ construirConsulta: () => null }), [])
   const { construirConsulta } = consultaFalsa([], { alFallar: () => ({ data: null, count: null, error: new Error('boom') }) })
   await assert.rejects(() => cargarActivacionesMetricas({ construirConsulta }), /boom/)
+})
+
+test('adjuntarEvento agrega nombre y estado solo a filas con evento y consulta una vez', async () => {
+  const consultas = []
+  const supabase = {
+    from: (tabla) => ({
+      select: () => ({
+        in: async (_col, ids) => {
+          consultas.push([tabla, ids])
+          return { data: [{ id: 'e1', nombre: 'Feria', inicio: '2026-11-01T00:00:00Z', fin: null, cancelado_at: null }], error: null }
+        },
+      }),
+    }),
+  }
+  const filas = await adjuntarEvento(supabase, [
+    { id: 'a', evento_id: 'e1' },
+    { id: 'b', evento_id: null },
+    { id: 'c', evento_id: 'e1' },
+  ])
+  assert.deepEqual(consultas, [['eventos', ['e1']]])
+  assert.deepEqual(filas.map((f) => f.evento_nombre), ['Feria', undefined, 'Feria'])
+  assert.deepEqual(filas.map((f) => f.evento_estado), ['en_curso', undefined, 'en_curso'])
+  assert.deepEqual(await adjuntarEvento(supabase, [{ id: 'x' }]), [{ id: 'x' }])
+  assert.equal(consultas.length, 1)
 })

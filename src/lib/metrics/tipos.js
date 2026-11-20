@@ -27,6 +27,9 @@
  * @property {boolean | null} [hubo_error]
  * @property {number | string | null} [latitud]
  * @property {number | string | null} [longitud]
+ * @property {string | null} [evento_id]
+ * @property {string | null} [evento_nombre] Joined by the API from `eventos`.
+ * @property {string | null} [evento_estado] `estadoEvento` at load time.
  */
 
 /**
@@ -48,12 +51,13 @@
  * @typedef {object} Filtros
  * @property {string} desde YYYY-MM-DD or ''.
  * @property {string} hasta YYYY-MM-DD or ''.
- * @property {string} plaza Key `pkey:<clave>` / 'none' or ''.
+ * @property {string[]} plaza Keys `pkey:<clave>` / 'none'; empty means all.
  * @property {string} zona Key `<plaza key>|<barrio>` or ''; only offered once a city is chosen.
  * @property {string} activador Key `uid:<id>` / 'none' or ''.
  * @property {string} tipo Normalized tipo key or ''.
  * @property {string} lider Key `lid:<id>` or ''.
  * @property {string} equipo Key `id:|num:|name:` or ''.
+ * @property {string} evento Key `eid:<id>` / 'none' or ''.
  */
 
 /**
@@ -68,7 +72,7 @@
  * @typedef {object} Opcion
  * @property {string} key
  * @property {string} nombre
- * @property {string} [grupo] Client plaza that groups a city option.
+ * @property {string} [grupo] Optgroup label: client plaza of a city, state of an event.
  * @property {string} [ciudad] City key a barrio option belongs to.
  */
 

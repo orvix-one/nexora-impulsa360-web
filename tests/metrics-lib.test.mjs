@@ -31,15 +31,16 @@ test('diasEntre es inclusivo y devuelve 0 con intervalos inválidos', () => {
 })
 
 test('los filtros viajan por la URL sin valores vacíos ni fechas inválidas', () => {
-  const filtros = { ...filtrosVacios(), desde: '2026-10-01', plaza: 'pkey:lapaz', equipo: 'id:abc' }
+  const filtros = { ...filtrosVacios(), desde: '2026-10-01', plaza: ['pkey:lapaz', 'none'], equipo: 'id:abc' }
   assert.deepEqual(filtrosAQuery(filtros), {
     desde: '2026-10-01',
-    ciudad: 'pkey:lapaz',
+    ciudad: ['pkey:lapaz', 'none'],
     equipo: 'id:abc',
   })
   assert.deepEqual(filtrosDesdeQuery(filtrosAQuery(filtros)), filtros)
   assert.equal(filtrosDesdeQuery({ desde: 'ayer', ciudad: ['pkey:oruro', 'x'] }).desde, '')
-  assert.equal(filtrosDesdeQuery({ ciudad: ['pkey:oruro', 'x'] }).plaza, 'pkey:oruro')
+  assert.deepEqual(filtrosDesdeQuery({ ciudad: ['pkey:oruro', 'pkey:oruro', ' '] }).plaza, ['pkey:oruro'])
+  assert.deepEqual(filtrosDesdeQuery({ ciudad: 'pkey:oruro' }).plaza, ['pkey:oruro'])
   assert.equal(hayFiltros(filtrosVacios()), false)
   assert.equal(hayFiltros(filtros), true)
 })
@@ -51,14 +52,15 @@ test('sanearFiltros descarta valores que el catálogo del usuario no ofrece', ()
     equipos: [],
     lideres: [],
     tipos: [],
+    eventos: [],
   }
   const filtros = {
     ...filtrosVacios(),
     desde: '2026-10-01',
-    plaza: 'pkey:lapaz',
+    plaza: ['pkey:lapaz', 'pkey:ajena'],
     equipo: 'id:ajeno',
   }
-  assert.deepEqual(sanearFiltros(filtros, opciones), { ...filtros, equipo: '' })
+  assert.deepEqual(sanearFiltros(filtros, opciones), { ...filtros, plaza: ['pkey:lapaz'], equipo: '' })
 })
 
 test('escalaEjeY elige pasos redondos con a lo sumo 8 intervalos', () => {

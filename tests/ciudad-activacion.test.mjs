@@ -10,7 +10,7 @@ import {
 import { fetchActivaciones } from '../server/activacionesExportacion.js'
 import { COLUMNAS_EXCEL, generarExcel } from '../src/lib/reportes/excel.js'
 import { crearContexto } from '../src/lib/metrics/identidad.js'
-import { agruparPorPlaza, construirOpciones } from '../src/lib/metrics/filtros.js'
+import { agruparOpciones, construirOpciones } from '../src/lib/metrics/filtros.js'
 
 const componentSource = readFileSync(new URL('../src/components/ActivacionesTable.vue', import.meta.url), 'utf8')
 const identidadSource = readFileSync(new URL('../src/lib/metrics/identidad.js', import.meta.url), 'utf8')
@@ -187,7 +187,7 @@ test('el filtro de ciudad agrupa los municipios por plaza y solo ofrece ciudades
     usuarios: [],
     ciudadesPorPlaza: [{ ciudad: 'Santa Cruz de la Sierra', plaza: 'Santa Cruz de la Sierra' }, { ciudad: 'Cochabamba', plaza: 'Cochabamba' }],
   })
-  const grupos = agruparPorPlaza(construirOpciones(ctx).plazas)
+  const grupos = agruparOpciones(construirOpciones(ctx).plazas)
   assert.deepEqual(grupos.map((g) => [g.nombre, g.opciones.map((o) => o.nombre)]), [
     ['Santa Cruz de la Sierra', ['Santa Cruz de la Sierra']],
     ['Sin plaza', ['Puerto Quijarro', 'Sacaba']],
