@@ -50,22 +50,107 @@ export function rangoEvento({ desde, horaDesde = '', hasta = '', horaHasta = '' 
   return { inicio: inicio.toISOString(), fin: fin.toISOString() }
 }
 
-const ZONA = 'America/La_Paz'
-const esMedianoche = (fecha) => fecha.toLocaleTimeString('es-BO', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: ZONA }) === '00:00'
-const soloFecha = (fecha) => fecha.toLocaleDateString('es-BO', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: ZONA })
-const fechaHora = (fecha) => fecha.toLocaleString('es-BO', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: ZONA })
+const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic']
+const DIA_MS = 24 * 3600 * 1000
+const formatoBolivia = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'America/La_Paz', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+})
 
-/** Midnight means no hour was given. @param {string} valor */
-export function fechaInicioEvento(valor) {
-  const fecha = new Date(valor)
-  return esMedianoche(fecha) ? soloFecha(fecha) : fechaHora(fecha)
+/** @param {Date} fecha */
+function enBolivia(fecha) {
+  const p = Object.fromEntries(formatoBolivia.formatToParts(fecha).map((x) => [x.type, x.value]))
+  return { anio: Number(p.year), mes: Number(p.month), dia: Number(p.day), hora: `${p.hour}:${p.minute}`, n: Date.UTC(Number(p.year), Number(p.month) - 1, Number(p.day)) / DIA_MS }
 }
 
-/** An end at midnight closes the previous whole day. @param {string | null | undefined} valor */
-export function fechaFinEvento(valor) {
-  if (!valor) return 'Abierto'
-  const fecha = new Date(valor)
-  return esMedianoche(fecha) ? soloFecha(new Date(fecha.getTime() - 1)) : fechaHora(fecha)
+/** @param {ReturnType<typeof enBolivia>} d @param {ReturnType<typeof enBolivia>} hoy */
+function etiquetaDia(d, hoy) {
+  const relativo = { [-1]: 'ayer', 0: 'hoy', 1: 'mañana' }[d.n - hoy.n]
+  if (relativo) return relativo
+  return `${d.dia} ${MESES[d.mes - 1]}${d.anio === hoy.anio ? '' : ` ’${String(d.anio).slice(2)}`}`
+}
+
+const mayuscula = (texto) => texto.charAt(0).toUpperCase() + texto.slice(1)
+const plural = (n, palabra) => `${n} ${palabra}${n === 1 ? '' : 's'}`
+
+/** "hoy, 10:20", "12 nov, 10:20". @param {string} valor @param {Date} [ahora] */
+export function momentoEvento(valor, ahora = new Date()) {
+  const d = enBolivia(new Date(valor))
+  return `${etiquetaDia(d, enBolivia(ahora))}, ${d.hora}`
+}
+
+/**
+ * Start and end as dates with an optional hour. Midnight means no hour was given; 00:01 and 23:59 come from assignments that meant the whole day.
+ * @param {string} inicio @param {string | null | undefined} fin
+ */
+function extremos(inicio, fin) {
+  const desde = enBolivia(new Date(inicio))
+  const desdeHora = ['00:00', '00:01'].includes(desde.hora) ? null : desde.hora
+  if (!fin) return { desde, desdeHora, hasta: null, hastaHora: null }
+  const fecha = new Date(fin)
+  const crudo = enBolivia(fecha)
+  if (crudo.hora === '00:00') return { desde, desdeHora, hasta: enBolivia(new Date(fecha.getTime() - 1)), hastaHora: null }
+  return { desde, desdeHora, hasta: crudo, hastaHora: crudo.hora === '23:59' ? null : crudo.hora }
+}
+
+/** @param {number} ms */
+function duracionHoras(ms) {
+  const minutos = Math.round(ms / 60000)
+  if (minutos < 60) return `${minutos} min`
+  if (minutos < 24 * 60) return `${Math.round(minutos / 60)} h`
+  return plural(Math.round(ms / DIA_MS), 'día')
+}
+
+/**
+ * Range and length in plain words for lists: "Hoy, 08:30–15:30" · "7 h", "12–30 nov" · "19 días", "Desde 20 nov" · "Sin fecha de fin".
+ * @param {{ inicio: string, fin?: string | null }} evento @param {Date} [ahora]
+ * @returns {{ texto: string, duracion: string }}
+ */
+export function cuandoEvento({ inicio, fin }, ahora = new Date()) {
+  const hoy = enBolivia(ahora)
+  const { desde, desdeHora, hasta, hastaHora } = extremos(inicio, fin)
+  const punto = (d, hora) => (hora ? `${etiquetaDia(d, hoy)}, ${hora}` : etiquetaDia(d, hoy))
+  if (!hasta) return { texto: mayuscula(`desde ${punto(desde, desdeHora)}`), duracion: 'Sin fecha de fin' }
+
+  const sinHoras = !desdeHora && !hastaHora
+  const duracion = sinHoras
+    ? (hasta.n === desde.n ? 'Todo el día' : plural(hasta.n - desde.n + 1, 'día'))
+    : duracionHoras(new Date(fin).getTime() - new Date(inicio).getTime())
+
+  if (hasta.n === desde.n) {
+    const horas = desdeHora && hastaHora ? `, ${desdeHora}–${hastaHora}` : desdeHora ? `, desde ${desdeHora}` : hastaHora ? `, hasta ${hastaHora}` : ''
+    return { texto: mayuscula(etiquetaDia(desde, hoy) + horas), duracion }
+  }
+  if (!sinHoras) return { texto: mayuscula(`${punto(desde, desdeHora)} → ${punto(hasta, hastaHora)}`), duracion }
+  const a = etiquetaDia(desde, hoy)
+  const b = etiquetaDia(hasta, hoy)
+  const mismoMes = desde.mes === hasta.mes && desde.anio === hasta.anio && a.startsWith(String(desde.dia)) && b.startsWith(String(hasta.dia))
+  return { texto: mayuscula(mismoMes ? `${desde.dia}–${b}` : `${a} – ${b}`), duracion }
+}
+
+/**
+ * What each member recorded during the event, plus anyone else whose activations landed in it.
+ * @param {{ usuario_id: string, categoria?: string | null, cash_in?: boolean | null, creditos?: boolean | null, remesas?: boolean | null, created_at: string }[]} activaciones
+ * @param {{ id: string, nombre: string }[]} miembros
+ * @param {Map<string, string>} [otrosNombres]
+ */
+export function resumenEvento(activaciones, miembros, otrosNombres = new Map()) {
+  const vacia = (id, nombre) => ({ id, nombre, total: 0, comercios: 0, transeuntes: 0, cashIn: 0, creditos: 0, remesas: 0, ultima: null })
+  const filas = new Map(miembros.map((m) => [m.id, vacia(m.id, m.nombre)]))
+  const total = vacia('total', 'Total')
+  for (const x of activaciones) {
+    if (!filas.has(x.usuario_id)) filas.set(x.usuario_id, vacia(x.usuario_id, otrosNombres.get(x.usuario_id) ?? 'Sin nombre'))
+    for (const fila of [filas.get(x.usuario_id), total]) {
+      fila.total += 1
+      if (x.categoria === 'comercio' || x.categoria === 'tienda_barrio') fila.comercios += 1
+      if (x.categoria === 'transeunte') fila.transeuntes += 1
+      if (x.cash_in) fila.cashIn += 1
+      if (x.creditos) fila.creditos += 1
+      if (x.remesas) fila.remesas += 1
+      if (!fila.ultima || x.created_at > fila.ultima) fila.ultima = x.created_at
+    }
+  }
+  const orden = [...filas.values()].sort((a, b) => b.total - a.total || a.nombre.localeCompare(b.nombre, 'es'))
+  return { filas: orden, total }
 }
 
 export const SIN_LUGAR = '__sin_lugar'

@@ -49,7 +49,12 @@ const routes = [
     component: () => import('./pages/EventosPage.vue'),
     meta: { admin: true },
   },
-  { path: '/lugares', redirect: '/eventos' },
+  {
+    path: '/eventos/:id',
+    component: () => import('./pages/EventoPage.vue'),
+    meta: { admin: true },
+  },
+  { path: '/lugares', redirect: { path: '/eventos', query: { pestana: 'lugares' } } },
   {
     path: '/notificaciones',
     component: () => import('./components/Notificaciones.vue'),

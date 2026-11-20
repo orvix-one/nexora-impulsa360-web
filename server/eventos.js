@@ -1,5 +1,5 @@
 // Admin API for events: one or more activators assigned to an optional place over a date or hour range.
-import { accionesEvento, estadoEvento } from '../src/lib/eventos.js'
+import { accionesEvento, estadoEvento, resumenEvento } from '../src/lib/eventos.js'
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -65,11 +65,7 @@ async function cargarEvento(supabase, eventoId) {
 }
 
 export function registrarRutasEventos(app, { adminSupabase, asyncRoute, jsonError }) {
-  app.get('/admin/eventos', asyncRoute(async (_req, res) => {
-    const { data: eventos, error } = await adminSupabase.from('eventos')
-      .select('id,nombre,lugar_id,radio_m,inicio,fin,cancelado_at,created_at').order('inicio', { ascending: false })
-    if (error) { jsonError(res, 500, 'No se pudo obtener los eventos.', error.message); return }
-    const lista = eventos ?? []
+  async function decorarEventos(lista) {
     const ids = lista.map((e) => e.id)
     const lugarIds = [...new Set(lista.map((e) => e.lugar_id).filter(Boolean))]
     const [miembros, lugares, activaciones] = await Promise.all([
@@ -78,42 +74,71 @@ export function registrarRutasEventos(app, { adminSupabase, asyncRoute, jsonErro
       ids.length ? adminSupabase.from('activaciones').select('evento_id').in('evento_id', ids) : { data: [], error: null },
     ])
     const fallo = [miembros, lugares, activaciones].find((r) => r.error)
-    if (fallo) { jsonError(res, 500, 'No se pudo obtener los eventos.', fallo.error.message); return }
+    if (fallo) throw fallo.error
     const activadorIds = [...new Set((miembros.data ?? []).map((m) => m.activador_id))]
     const activadores = activadorIds.length
       ? await adminSupabase.from('activadores').select('usuario_id,nombre').in('usuario_id', activadorIds)
       : { data: [], error: null }
-    if (activadores.error) { jsonError(res, 500, 'No se pudo obtener los eventos.', activadores.error.message); return }
+    if (activadores.error) throw activadores.error
 
     const departamentos = await departamentosDeMunicipios(adminSupabase, (lugares.data ?? []).map((l) => l.municipio_id))
     const nombrePorId = new Map((activadores.data ?? []).map((a) => [a.usuario_id, a.nombre]))
     const lugarPorId = new Map((lugares.data ?? []).map((l) => [l.id, l]))
     const miembrosPorEvento = new Map()
     for (const m of miembros.data ?? []) {
-      const lista = miembrosPorEvento.get(m.evento_id) ?? []
-      lista.push({ id: m.activador_id, nombre: nombrePorId.get(m.activador_id) ?? 'Sin nombre', desde: m.created_at })
-      miembrosPorEvento.set(m.evento_id, lista)
+      const grupo = miembrosPorEvento.get(m.evento_id) ?? []
+      grupo.push({ id: m.activador_id, nombre: nombrePorId.get(m.activador_id) ?? 'Sin nombre', desde: m.created_at })
+      miembrosPorEvento.set(m.evento_id, grupo)
     }
     const conteo = new Map()
     for (const { evento_id } of activaciones.data ?? []) conteo.set(evento_id, (conteo.get(evento_id) ?? 0) + 1)
     const ahora = new Date()
-    res.json({
-      eventos: lista.map((evento) => {
-        const estado = estadoEvento(evento, ahora)
-        const total = conteo.get(evento.id) ?? 0
-        const lugar = lugarPorId.get(evento.lugar_id)
-        return {
-          ...evento,
-          lugar: lugar?.nombre ?? null,
-          punto: lugar ? { latitud: lugar.latitud, longitud: lugar.longitud } : null,
-          departamento: lugar ? departamentos.get(lugar.municipio_id) ?? null : null,
-          activadores: (miembrosPorEvento.get(evento.id) ?? []).sort((a, b) => a.nombre.localeCompare(b.nombre, 'es')),
-          activaciones: total,
-          estado,
-          acciones: accionesEvento(estado, total),
-        }
-      }),
+    return lista.map((evento) => {
+      const estado = estadoEvento(evento, ahora)
+      const total = conteo.get(evento.id) ?? 0
+      const lugar = lugarPorId.get(evento.lugar_id)
+      return {
+        ...evento,
+        lugar: lugar?.nombre ?? null,
+        punto: lugar ? { latitud: lugar.latitud, longitud: lugar.longitud } : null,
+        departamento: lugar ? departamentos.get(lugar.municipio_id) ?? null : null,
+        activadores: (miembrosPorEvento.get(evento.id) ?? []).sort((a, b) => a.nombre.localeCompare(b.nombre, 'es')),
+        activaciones: total,
+        estado,
+        acciones: accionesEvento(estado, total),
+      }
     })
+  }
+
+  async function resumenDeEvento(evento) {
+    const { data, error } = await adminSupabase.from('activaciones')
+      .select('usuario_id,categoria,cash_in,creditos,remesas,created_at').eq('evento_id', evento.id)
+    if (error) throw error
+    const externos = [...new Set((data ?? []).map((x) => x.usuario_id))].filter((id) => !evento.activadores.some((a) => a.id === id))
+    const nombres = externos.length ? await adminSupabase.from('activadores').select('usuario_id,nombre').in('usuario_id', externos) : { data: [], error: null }
+    if (nombres.error) throw nombres.error
+    return resumenEvento(data ?? [], evento.activadores, new Map((nombres.data ?? []).map((a) => [a.usuario_id, a.nombre ?? 'Sin nombre'])))
+  }
+
+  const CAMPOS_EVENTO = 'id,nombre,lugar_id,radio_m,inicio,fin,cancelado_at,created_at'
+
+  app.get('/admin/eventos', asyncRoute(async (_req, res) => {
+    const { data, error } = await adminSupabase.from('eventos').select(CAMPOS_EVENTO).order('inicio', { ascending: false })
+    if (error) { jsonError(res, 500, 'No se pudo obtener los eventos.', error.message); return }
+    try { res.json({ eventos: await decorarEventos(data ?? []) }) }
+    catch (fallo) { jsonError(res, 500, 'No se pudo obtener los eventos.', fallo?.message) }
+  }))
+
+  app.get('/admin/eventos/:eventoId', asyncRoute(async (req, res) => {
+    const eventoId = String(req.params.eventoId ?? '')
+    if (!UUID.test(eventoId)) { jsonError(res, 400, 'Evento invalido.'); return }
+    const { data, error } = await adminSupabase.from('eventos').select(CAMPOS_EVENTO).eq('id', eventoId).maybeSingle()
+    if (error) { jsonError(res, 500, 'No se pudo obtener el evento.', error.message); return }
+    if (!data) { jsonError(res, 404, 'Evento no encontrado.'); return }
+    try {
+      const [evento] = await decorarEventos([data])
+      res.json({ evento, resumen: await resumenDeEvento(evento) })
+    } catch (fallo) { jsonError(res, 500, 'No se pudo obtener el evento.', fallo?.message) }
   }))
 
   app.post('/admin/eventos', asyncRoute(async (req, res) => {
