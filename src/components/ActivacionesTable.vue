@@ -11,7 +11,7 @@ import {
 } from '../lib/feedback'
 import { contarRegistros, isValidEmail, normalizeEmail, normalizeText } from '../lib/textUtils'
 import { useAuth } from '../lib/authStore'
-import { etiquetaCiudadActivacion } from '../lib/plazas'
+import { etiquetaCiudadActivacion, etiquetaOrigenZona } from '../lib/plazas'
 import { logClientError } from '../lib/logging'
 import { MIME_XLSX, descargarArchivo } from '../lib/reportes/descarga'
 import { generarExcel, nombreArchivoExcel } from '../lib/reportes/excel'
@@ -193,10 +193,8 @@ function etiquetaCampo(key, row = {}) {
   return especiales[key] ?? key.replace(/_/g, ' ').replace(/^./, (letter) => letter.toUpperCase())
 }
 
-const ORIGEN_ZONA = { gps: 'GPS', elegida: 'Elegida por el activador', escrita: 'Escrita por el activador' }
-
 function formatearValor(value, key) {
-  if (key === 'zona_fuente') return ORIGEN_ZONA[value] ?? String(value)
+  if (key === 'zona_fuente') return etiquetaOrigenZona(value)
   if (typeof value === 'boolean') return value ? 'Si' : 'No'
   if ((key.includes('fecha') || key.endsWith('_at')) && value) {
     if (key.endsWith('_at')) return formatCreatedAtBolivia(value)

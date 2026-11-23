@@ -60,15 +60,11 @@ export function mismaPlaza(a, b) {
   return normalizarPlazaClave(a) === normalizarPlazaClave(b)
 }
 
-export function parsearAliasesPlaza(value) {
-  const crudos = Array.isArray(value) ? value : String(value ?? '').split(',')
-  const aliases = new Map()
-  for (const crudo of crudos) {
-    const alias = typeof crudo === 'string' ? crudo.trim() : ''
-    const clave = normalizarPlazaClave(alias)
-    if (clave && !aliases.has(clave)) aliases.set(clave, alias)
-  }
-  return [...aliases.values()]
+const ORIGEN_ZONA = { gps: 'GPS', elegida: 'Elegida por el activador', escrita: 'Escrita por el activador' }
+
+/** @param {string | null | undefined} fuente */
+export function etiquetaOrigenZona(fuente) {
+  return fuente ? ORIGEN_ZONA[fuente] ?? String(fuente) : ''
 }
 
 export function deduplicarPlazas(values) {

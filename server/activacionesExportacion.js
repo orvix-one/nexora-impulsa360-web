@@ -3,6 +3,14 @@ import { etiquetaCiudadActivacion, normalizarPlazaClave } from '../src/lib/plaza
 
 const PAGE_SIZE = 1000
 
+export const SELECT_EXPORTACION = [
+  '*',
+  'municipio:municipio_id(nombre, nombre_comun, provincia:provincia_id(departamento:departamento_id(nombre)))',
+  'evento:evento_id(id, nombre)',
+  'lugar:lugar_id(nombre)',
+  'viaje:viaje_id(id, inicio, fin, municipio:municipio_id(nombre, nombre_comun))',
+].join(', ')
+
 function applyFilters(query, filters) {
   if (filters.fechaDesde) query = query.gte('fecha_activacion', filters.fechaDesde)
   if (filters.fechaHasta) query = query.lte('fecha_activacion', filters.fechaHasta)
@@ -26,7 +34,7 @@ function matchesTextFilters(row, filters) {
 export async function fetchActivaciones(adminSupabase, filters, alcance) {
   const rows = []
   for (let from = 0; ; from += PAGE_SIZE) {
-    let query = adminSupabase.from('activaciones').select('*')
+    let query = adminSupabase.from('activaciones').select(SELECT_EXPORTACION)
       .order('fecha_activacion', { ascending: false, nullsFirst: false })
       .order('created_at', { ascending: false })
       .order('id', { ascending: true })

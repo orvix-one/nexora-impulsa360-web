@@ -165,8 +165,15 @@ class Query {
       rows = rows.slice(this.window[0], this.window[1] + 1)
     }
     if (this.columns !== '*') {
-      const keys = this.columns.split(',').map((key) => key.trim())
-      rows = rows.map((row) => Object.fromEntries(keys.map((key) => [key.replace(/\(.*$/, ''), this.readColumn(row, key)])))
+      const keys = splitTopLevel(this.columns).map((key) => key.trim())
+      const todas = keys.includes('*')
+      rows = rows.map((row) => ({
+        ...(todas ? row : {}),
+        ...Object.fromEntries(keys.filter((key) => key !== '*').map((key) => {
+          const alias = key.match(/^(\w+):\w+\(/)
+          return alias ? [alias[1], row[alias[1]] ?? null] : [key.replace(/\(.*$/, ''), this.readColumn(row, key)]
+        })),
+      }))
     }
     if (this.wantsSingle) return { data: rows[0] ?? null, error: null }
     return { data: this.headOnly ? null : rows, error: null, count: this.countMode ? count : null }

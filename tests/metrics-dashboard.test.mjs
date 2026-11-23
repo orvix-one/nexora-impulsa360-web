@@ -355,9 +355,9 @@ test('reconoce Cliente antiguo como categoría sin alterar los tipos existentes'
 
 test('el territorio sale del municipio del GPS, no de la plaza organizacional', async () => {
   const data = [
-    { ...rows[0], id: 'a1', municipio_id: 2, ciudad_activacion: 'El Alto', plaza_efectiva_registro: 'La Paz' },
-    { ...rows[1], id: 'a2', municipio_id: 2, ciudad_activacion: 'El Alto', plaza_efectiva_registro: 'La Paz' },
-    { ...rows[2], id: 'a3', municipio_id: 1, ciudad_activacion: 'La Paz', plaza_efectiva_registro: 'El Alto' },
+    { ...rows[0], id: 'a1', municipio_id: 2, ciudad_activacion: 'El Alto', plaza_base_registro: 'La Paz' },
+    { ...rows[1], id: 'a2', municipio_id: 2, ciudad_activacion: 'El Alto', plaza_base_registro: 'La Paz' },
+    { ...rows[2], id: 'a3', municipio_id: 1, ciudad_activacion: 'La Paz', plaza_base_registro: 'El Alto' },
     { ...rows[3], id: 'a4', municipio_id: null, ciudad_activacion: null },
     { ...rows[4], id: 'a5', municipio_id: null, ciudad_activacion: '   ' },
   ]

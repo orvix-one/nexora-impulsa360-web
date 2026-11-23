@@ -30,7 +30,6 @@ test('la ciudad sale de ciudad_activacion y normaliza nombres', () => {
 test('activador de La Paz que activa en El Alto muestra El Alto', () => {
   const fila = {
     ciudad_activacion: 'el_alto',
-    plaza_efectiva_registro: 'La Paz',
     plaza_base_registro: 'La Paz',
     plaza: 'La Paz',
   }
@@ -40,7 +39,6 @@ test('activador de La Paz que activa en El Alto muestra El Alto', () => {
 test('activador de El Alto que activa en La Paz muestra La Paz', () => {
   const fila = {
     ciudad_activacion: 'la_paz',
-    plaza_efectiva_registro: 'El Alto',
     plaza_base_registro: 'El Alto',
     plaza: 'El Alto',
   }
@@ -49,7 +47,7 @@ test('activador de El Alto que activa en La Paz muestra La Paz', () => {
 
 test('ciudad NULL o vacía muestra Sin ciudad registrada sin sustituir la plaza', () => {
   for (const ciudad_activacion of [null, undefined, '', '   ', ' ']) {
-    const fila = { ciudad_activacion, plaza_efectiva_registro: 'La Paz', plaza: 'La Paz' }
+    const fila = { ciudad_activacion, plaza_base_registro: 'La Paz', plaza: 'La Paz' }
     assert.equal(ciudadActivacion(fila), '', `valor ${JSON.stringify(ciudad_activacion)} no aporta ciudad`)
     assert.equal(etiquetaCiudadActivacion(fila), SIN_CIUDAD_REGISTRADA)
   }
@@ -78,9 +76,9 @@ function fakeSupabase(filas) {
 const filtrosVacios = { plaza: '', distrito: '', impulsador: '', fechaDesde: '', fechaHasta: '' }
 
 const filasExcel = [
-  { id: 'x1', usuario_id: 'u1', ciudad_activacion: 'el_alto', plaza_efectiva_registro: 'La Paz', plaza_base_registro: 'La Paz', zona_activacion: 'Senkata' },
-  { id: 'x2', usuario_id: 'u2', ciudad_activacion: 'la_paz', plaza_efectiva_registro: 'El Alto', plaza_base_registro: 'El Alto', zona_activacion: 'Miraflores' },
-  { id: 'x3', usuario_id: 'u3', ciudad_activacion: null, plaza_efectiva_registro: 'La Paz', plaza: 'La Paz', zona_activacion: 'Centro' },
+  { id: 'x1', usuario_id: 'u1', ciudad_activacion: 'el_alto', plaza_base_registro: 'La Paz', zona_activacion: 'Senkata' },
+  { id: 'x2', usuario_id: 'u2', ciudad_activacion: 'la_paz', plaza_base_registro: 'El Alto', zona_activacion: 'Miraflores' },
+  { id: 'x3', usuario_id: 'u3', ciudad_activacion: null, plaza: 'La Paz', zona_activacion: 'Centro' },
 ]
 
 async function leerExcel(filters) {
@@ -147,7 +145,7 @@ test('el listado, el detalle y las exportaciones del portal usan la misma ciudad
     'la ciudad vacía se muestra en el detalle en lugar de omitirse')
 
   const columnaCiudad = COLUMNAS_EXCEL.find(([header]) => header === 'Ciudad')[1]
-  assert.equal(columnaCiudad({ ciudad_activacion: 'el_alto', plaza_efectiva_registro: 'La Paz' }), 'El Alto')
+  assert.equal(columnaCiudad({ ciudad_activacion: 'el_alto', plaza_base_registro: 'La Paz' }), 'El Alto')
 })
 
 test('el dashboard ubica por municipio del GPS y nombra con ciudad_activacion como respaldo', () => {
