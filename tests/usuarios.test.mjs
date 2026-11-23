@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { ajustarRoles, equiposDelUsuario, formularioDesdeUsuario, formularioVacio, payloadUsuario, validarFormulario } from '../src/lib/usuarios.js'
+import { ajustarRoles, equiposDelUsuario, formularioDesdeUsuario, formularioVacio, payloadUsuario, validarContrasena, validarFormulario } from '../src/lib/usuarios.js'
 import { contarRegistros } from '../src/lib/textUtils.js'
 
 const nuevo = () => ({ ...formularioVacio(), nombre: 'Ana', email: ' Ana@Mail.com ', password: 'Segura#2026x' })
@@ -9,6 +9,12 @@ test('exige contrasena fuerte solo al registrar', () => {
   assert.equal(validarFormulario(nuevo(), { esNuevo: true }), null)
   assert.match(validarFormulario({ ...nuevo(), password: 'debil' }, { esNuevo: true }), /contrasena/)
   assert.equal(validarFormulario({ ...nuevo(), password: '' }, { esNuevo: false }), null)
+})
+
+test('valida la nueva contrasena al cambiarla', () => {
+  assert.equal(validarContrasena('Segura#2026x'), null)
+  assert.match(validarContrasena(''), /Ingresa/)
+  assert.match(validarContrasena('segura2026x'), /mayuscula/)
 })
 
 test('el payload lleva contrasena solo al registrar y normaliza el correo', () => {

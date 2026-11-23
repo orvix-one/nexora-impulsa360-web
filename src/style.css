@@ -2339,3 +2339,28 @@ button:disabled,
 .plazas-toolbar {
   margin-bottom: 1rem;
 }
+
+.campo-con-accion {
+  position: relative;
+  display: block;
+}
+
+.campo-con-accion .input-texto {
+  width: 100%;
+  padding-right: 5.5rem;
+}
+
+.campo-accion {
+  position: absolute;
+  top: 50%;
+  right: 0.5rem;
+  transform: translateY(-50%);
+  border: 0;
+  background: none;
+  padding: 0.25rem 0.4rem;
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #1769ff;
+  cursor: pointer;
+}

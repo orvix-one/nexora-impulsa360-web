@@ -6,6 +6,17 @@ export const ESTADOS = ['activo', 'inhabilitado']
 
 const CONTRASENA_FUERTE = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{10,}$/
 
+/**
+ * @param {string} password
+ * @returns {string | null}
+ */
+export function validarContrasena(password) {
+  if (!password) return 'Ingresa la nueva contrasena.'
+  if (!CONTRASENA_FUERTE.test(password))
+    return 'La contrasena debe tener al menos 10 caracteres, mayuscula, minuscula, numero y simbolo.'
+  return null
+}
+
 /** @param {string | null | undefined} valor */
 export function etiqueta(valor) {
   return valor ? valor.charAt(0).toUpperCase() + valor.slice(1) : 'Sin asignar'
@@ -112,8 +123,10 @@ export function validarFormulario(form, { esNuevo }) {
   if (!form.nombre?.trim() || !normalizeEmail(form.email) || (esNuevo && !form.password))
     return 'Completa todos los campos obligatorios.'
   if (!isValidEmail(form.email)) return 'Ingresa un correo valido.'
-  if (esNuevo && !CONTRASENA_FUERTE.test(form.password))
-    return 'La contrasena debe tener al menos 10 caracteres, mayuscula, minuscula, numero y simbolo.'
+  if (esNuevo) {
+    const errorContrasena = validarContrasena(form.password)
+    if (errorContrasena) return errorContrasena
+  }
   if (form.estado === 'inhabilitado' && !form.motivo_inhabilitacion?.trim())
     return 'Ingresa el motivo de inhabilitacion.'
   return null

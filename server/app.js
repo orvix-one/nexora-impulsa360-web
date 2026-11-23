@@ -1965,7 +1965,6 @@ export function createAdminApiApp({
       const rawPlaza = req.body?.plaza
       const rawEmail = req.body?.email
       const rawEmailConfirm = req.body?.emailConfirm
-      const rawPassword = req.body?.password
       const requestedTeamId = normalizeNullableText(req.body?.equipo_id)
       const requestedTeamIds = Array.isArray(req.body?.equipo_ids) ? req.body.equipo_ids : []
       const requestedBillerTeamIds = Array.isArray(req.body?.facturador_equipo_ids) ? req.body.facturador_equipo_ids : []
@@ -1977,7 +1976,6 @@ export function createAdminApiApp({
       const shouldUpdateEmail = typeof rawEmail === 'string'
       const email = shouldUpdateEmail ? normalizeEmail(rawEmail) : null
       const emailConfirm = rawEmailConfirm === true
-      const password = typeof rawPassword === 'string' ? rawPassword : ''
 
       if (!nombre) {
         jsonError(res, 400, 'nombre es obligatorio.')
@@ -1991,11 +1989,6 @@ export function createAdminApiApp({
 
       if (shouldUpdateEmail && !isValidEmail(email)) {
         jsonError(res, 400, 'email invalido.')
-        return
-      }
-
-      if (password && !isStrongPassword(password)) {
-        jsonError(res, 400, 'La contrasena debe tener al menos 10 caracteres, mayuscula, minuscula, numero y simbolo.')
         return
       }
 
@@ -2023,6 +2016,11 @@ export function createAdminApiApp({
 
       const previousEmail = normalizeEmail(previousRow.email) || null
       const emailChanged = shouldUpdateEmail && email !== previousEmail
+      const authIdForUpdate = previousRow.auth_user_id ?? null
+      if (!authIdForUpdate && emailChanged) {
+        jsonError(res, 409, 'El perfil no tiene cuenta de acceso para actualizar credenciales.')
+        return
+      }
 
       const { data: previousRoleRows, error: previousRolesError } = await adminSupabase
         .from('activador_roles').select('rol').eq('usuario_id', userId)
@@ -2208,10 +2206,6 @@ export function createAdminApiApp({
         authUpdatePayload.email_confirm = true
       }
 
-      if (password) {
-        authUpdatePayload.password = password
-      }
-
       if (emailChanged) {
         authUpdatePayload.email = email
         if (!emailConfirm) {
@@ -2220,11 +2214,6 @@ export function createAdminApiApp({
       }
 
       let updateAuthErr
-      const authIdForUpdate = previousRow.auth_user_id ?? null
-      if (!authIdForUpdate && (password || emailChanged)) {
-        jsonError(res, 409, 'El perfil no tiene cuenta de acceso para actualizar credenciales.')
-        return
-      }
       try {
         if (!authIdForUpdate) {
           updateAuthErr = null
@@ -2273,7 +2262,6 @@ export function createAdminApiApp({
         rol,
         roles,
         emailUpdated: emailChanged,
-        passwordUpdated: Boolean(password),
       })
     })
   )

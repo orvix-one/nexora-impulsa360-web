@@ -11,6 +11,7 @@ import {
   formularioVacio,
   payloadUsuario,
   ROLES,
+  validarContrasena,
   validarFormulario,
 } from '../lib/usuarios'
 import SelectorActivadores from './SelectorActivadores.vue'
@@ -30,7 +31,12 @@ const form = ref(
   esNuevo ? formularioVacio() : formularioDesdeUsuario(props.usuario, props.organizacion.equipos),
 )
 const guardando = ref(false)
-const bloqueado = computed(() => guardando.value || props.ocupado)
+const cambiandoContrasena = ref(false)
+const nuevaContrasena = ref('')
+const mostrarContrasena = ref(false)
+const guardandoContrasena = ref(false)
+const bloqueado = computed(() => guardando.value || guardandoContrasena.value || props.ocupado)
+const puedeCambiarContrasena = computed(() => !esNuevo && !props.usuario.cuenta_acceso_eliminada)
 const conOrganizacion = computed(() => props.organizacion.available)
 const opcionesEquipo = computed(() =>
   props.organizacion.equipos
@@ -45,6 +51,38 @@ const opcionesEquipo = computed(() =>
 function elegirPlaza() {
   form.value.equipo_id = ''
   form.value.plaza = props.plazas.find((item) => item.id === form.value.plaza_id)?.nombre ?? ''
+}
+
+function mensajeDeError(error) {
+  return error instanceof Error && error.message ? error.message : 'Se produjo un error inesperado.'
+}
+
+function abrirCambioContrasena() {
+  nuevaContrasena.value = ''
+  mostrarContrasena.value = false
+  cambiandoContrasena.value = true
+}
+
+async function aplicarContrasena() {
+  const mensaje = validarContrasena(nuevaContrasena.value)
+  if (mensaje) {
+    notifyWarning(mensaje)
+    return
+  }
+  guardandoContrasena.value = true
+  try {
+    await apiRequest(`/admin/users/${props.usuario.usuario_id}/reset-password`, {
+      method: 'POST',
+      body: { password: nuevaContrasena.value },
+    })
+    notifySuccess('Contraseña actualizada.')
+    cambiandoContrasena.value = false
+    nuevaContrasena.value = ''
+  } catch (error) {
+    notifyError(mensajeDeError(error))
+  } finally {
+    guardandoContrasena.value = false
+  }
 }
 
 async function guardar() {
@@ -64,9 +102,7 @@ async function guardar() {
     notifySuccess(esNuevo ? 'Usuario registrado.' : 'Usuario actualizado.')
     emit('guardado')
   } catch (error) {
-    notifyError(
-      error instanceof Error && error.message ? error.message : 'Se produjo un error inesperado.',
-    )
+    notifyError(mensajeDeError(error))
   } finally {
     guardando.value = false
   }
@@ -203,6 +239,63 @@ async function guardar() {
             :opciones="opcionesEquipo"
             placeholder="Buscar equipo"
           />
+        </section>
+        <section v-if="puedeCambiarContrasena" class="detalle-section formulario-campos">
+          <div class="toolbar-line">
+            <h4>Contraseña</h4>
+            <button
+              v-if="!cambiandoContrasena"
+              type="button"
+              class="boton"
+              :disabled="bloqueado"
+              @click="abrirCambioContrasena"
+            >
+              Cambiar contraseña
+            </button>
+          </div>
+          <template v-if="cambiandoContrasena">
+            <label>
+              <span class="field-label">Nueva contraseña</span>
+              <span class="campo-con-accion">
+                <input
+                  v-model="nuevaContrasena"
+                  :type="mostrarContrasena ? 'text' : 'password'"
+                  class="input-texto"
+                  autocomplete="new-password"
+                  @keydown.enter.prevent="aplicarContrasena"
+                />
+                <button
+                  type="button"
+                  class="campo-accion"
+                  :aria-pressed="mostrarContrasena"
+                  @click="mostrarContrasena = !mostrarContrasena"
+                >
+                  {{ mostrarContrasena ? 'Ocultar' : 'Mostrar' }}
+                </button>
+              </span>
+              <small class="viaje-nota"
+                >Mínimo 10 caracteres con mayúscula, minúscula, número y símbolo.</small
+              >
+            </label>
+            <div class="meta-row">
+              <button
+                type="button"
+                class="boton boton-cancelar"
+                :disabled="guardandoContrasena"
+                @click="cambiandoContrasena = false"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                class="boton boton-guardar"
+                :disabled="bloqueado || !nuevaContrasena"
+                @click="aplicarContrasena"
+              >
+                {{ guardandoContrasena ? 'Aplicando...' : 'Aplicar contraseña' }}
+              </button>
+            </div>
+          </template>
         </section>
         <div class="confirm-actions">
           <template v-if="!esNuevo">
