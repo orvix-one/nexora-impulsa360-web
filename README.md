@@ -75,17 +75,20 @@ npm run build
 
 ## Endpoints API admin
 
+Todos los requieren Bearer de adminstrador:
 - `GET /healthz`
-- `GET /admin/healthz` (requiere Bearer de administrador)
-- `GET /admin/users` (requiere Bearer de administrador)
-- `POST /admin/users` (requiere Bearer de administrador)
-- `PATCH /admin/users/:userId` (requiere Bearer de administrador, acepta `email` opcional)
-- `POST /admin/users/:userId/reset-password` (requiere Bearer de administrador)
-- `DELETE /admin/users/:userId` (requiere Bearer de administrador)
-- `DELETE /admin/activaciones/:activacionId` (requiere Bearer de administrador, elimina registro y foto asociada)
-- `GET /admin/storage/summary` (requiere Bearer de administrador, resumen de uso de bucket y BD)
-- `GET /admin/notifications` (requiere Bearer de administrador)
-- `POST /admin/notifications` (requiere Bearer de administrador)
+- `GET /admin/healthz`
+- `GET /admin/users`
+- `POST /admin/users`
+- `PATCH /admin/users/:userId`: acepta `email` opcional
+- `POST /admin/users/:userId/reset-password`
+- `PATCH /admin/users/:userId/status`: bloquea/desbloquea la cuenta de acceso)
+- `GET /admin/users/:userId/eliminable`
+- `DELETE /admin/users/:userId` Bearer admin y contraseña actual; solo usuarios inhabilitados sin historial
+- `DELETE /admin/activaciones/:activacionId`: elimina registro y foto asociada
+- `GET /admin/storage/summary`: resumen de uso de bucket y BD
+- `GET /admin/notifications`
+- `POST /admin/notifications`
 
 En Vercel (API serverless) se exponen con prefijo `/api`:
 

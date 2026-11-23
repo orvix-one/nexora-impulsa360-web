@@ -206,6 +206,7 @@ onMounted(cargar)
       </template>
     </div>
 
+    <Teleport to="body">
     <div v-if="nuevo" class="detalle-overlay" @click.self="nuevo = null">
       <aside class="detalle-activacion" role="dialog" aria-modal="true" aria-label="Nuevo evento">
         <header class="detalle-header">
@@ -261,7 +262,9 @@ onMounted(cargar)
         </form>
       </aside>
     </div>
+    </Teleport>
 
+    <Teleport to="body">
     <div v-if="edicionLugar" class="detalle-overlay" @click.self="edicionLugar = null">
       <aside class="detalle-activacion" role="dialog" aria-modal="true" aria-label="Lugar de interés">
         <header class="detalle-header">
@@ -280,5 +283,6 @@ onMounted(cargar)
         </form>
       </aside>
     </div>
+    </Teleport>
   </section>
 </template>

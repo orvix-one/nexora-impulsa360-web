@@ -65,9 +65,7 @@ export function formularioVacio() {
     equipo_ids: /** @type {string[]} */ ([]),
     facturador_equipo_ids: /** @type {string[]} */ ([]),
     roles: ['activador'],
-    estado: 'activo',
     lider_id: '',
-    motivo_inhabilitacion: '',
     puede_activar: false,
   }
 }
@@ -94,9 +92,7 @@ export function formularioDesdeUsuario(usuario, equipos) {
     facturador_equipo_ids:
       usuario.equipos_facturados?.map((/** @type {{ id: string }} */ item) => item.id) ?? [],
     roles: rolesUsuario(usuario),
-    estado: usuario.estado ?? 'activo',
     lider_id: usuario.lider_id ?? '',
-    motivo_inhabilitacion: usuario.motivo_inhabilitacion ?? '',
     puede_activar: usuario.puede_activar === true,
   }
 }
@@ -127,8 +123,6 @@ export function validarFormulario(form, { esNuevo }) {
     const errorContrasena = validarContrasena(form.password)
     if (errorContrasena) return errorContrasena
   }
-  if (form.estado === 'inhabilitado' && !form.motivo_inhabilitacion?.trim())
-    return 'Ingresa el motivo de inhabilitacion.'
   return null
 }
 
@@ -143,11 +137,8 @@ export function payloadUsuario(form, { organizacionDisponible, esNuevo }) {
     nombre: form.nombre.trim(),
     plaza: form.plaza?.trim() ?? '',
     roles: [...form.roles],
-    estado: form.estado,
     lider_id: !organizacionDisponible && esRol(form, 'activador') ? form.lider_id || null : null,
     puede_activar: esRol(form, 'lider') && form.puede_activar === true,
-    motivo_inhabilitacion:
-      form.estado === 'inhabilitado' ? form.motivo_inhabilitacion.trim() : null,
   }
   if (esNuevo) payload.password = form.password
   if (organizacionDisponible && esRol(form, 'activador')) payload.equipo_id = form.equipo_id

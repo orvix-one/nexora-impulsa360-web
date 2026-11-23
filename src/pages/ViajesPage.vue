@@ -119,6 +119,7 @@ onMounted(cargarViajes)
       </div>
     </div>
 
+    <Teleport to="body">
     <div v-if="panelAbierto" class="detalle-overlay" @click.self="panelAbierto = false">
       <aside class="detalle-activacion" role="dialog" aria-modal="true" aria-label="Nuevo viaje">
         <header class="detalle-header">
@@ -146,5 +147,6 @@ onMounted(cargarViajes)
         </form>
       </aside>
     </div>
+    </Teleport>
   </section>
 </template>

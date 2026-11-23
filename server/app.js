@@ -18,6 +18,7 @@ import { cargarMunicipios, nombresMunicipios, registrarRutasViajes } from './via
 import { registrarRutasLugares } from './lugares.js'
 import { registrarRutasEventos } from './eventos.js'
 import { registrarRutasPlazaMunicipios } from './plazaMunicipios.js'
+import { cambiarAcceso, tieneHistorial } from './usuarios.js'
 import {
   activationClassificationUpdate,
   isCreditosEligible,
@@ -1314,7 +1315,7 @@ export function createAdminApiApp({
   }))
 
   function withAccessFlag(users) {
-    return (users ?? []).map(({ auth_user_id, ...rest }) => ({ ...rest, cuenta_acceso_eliminada: auth_user_id == null }))
+    return (users ?? []).map(({ auth_user_id, ...rest }) => ({ ...rest, tiene_acceso: auth_user_id != null }))
   }
 
   app.use('/portal', authenticate)
@@ -1498,10 +1499,8 @@ export function createAdminApiApp({
       const esLider = roles.includes('lider')
       const esActivador = roles.includes('activador')
       const esFacturador = roles.includes('facturador')
-      const estado = normalizeText(req.body?.estado) || 'activo'
       const puedeActivar = rol === 'lider' && req.body?.puede_activar === true
       let liderId = esActivador ? normalizeNullableText(req.body?.lider_id) : null
-      const motivoInhabilitacion = normalizeNullableText(req.body?.motivo_inhabilitacion)
 
       const email = normalizeEmail(rawEmail)
       const password = typeof rawPassword === 'string' ? rawPassword : ''
@@ -1569,13 +1568,8 @@ export function createAdminApiApp({
         return
       }
 
-      if (!ALLOWED_USER_ROLES.has(rol) || !ALLOWED_USER_STATES.has(estado)) {
-        jsonError(res, 400, 'rol o estado invalido.')
-        return
-      }
-
-      if (estado === 'inhabilitado' && !motivoInhabilitacion) {
-        jsonError(res, 400, 'El motivo de inhabilitacion es obligatorio.')
+      if (!ALLOWED_USER_ROLES.has(rol)) {
+        jsonError(res, 400, 'rol invalido.')
         return
       }
 
@@ -1609,11 +1603,9 @@ export function createAdminApiApp({
         nombre,
         plaza,
         rol,
-        estado,
+        estado: 'activo',
         puede_activar: puedeActivar,
         lider_id: liderId,
-        inhabilitado_at: estado === 'inhabilitado' ? new Date().toISOString() : null,
-        motivo_inhabilitacion: estado === 'inhabilitado' ? motivoInhabilitacion : null,
       }
       if (esActivador && !teamId) insertedUser.organizacion_pendiente = true
       if (teamId) {
@@ -1969,7 +1961,6 @@ export function createAdminApiApp({
       const requestedTeamIds = Array.isArray(req.body?.equipo_ids) ? req.body.equipo_ids : []
       const requestedBillerTeamIds = Array.isArray(req.body?.facturador_equipo_ids) ? req.body.facturador_equipo_ids : []
       const requestedRol = normalizeText(req.body?.rol)
-      const requestedEstado = normalizeText(req.body?.estado)
 
       const nombre = normalizeText(rawNombre)
       let plaza = normalizeNullableText(rawPlaza)
@@ -1992,9 +1983,8 @@ export function createAdminApiApp({
         return
       }
 
-      if ((requestedRol && !ALLOWED_USER_ROLES.has(requestedRol)) ||
-        (requestedEstado && !ALLOWED_USER_STATES.has(requestedEstado))) {
-        jsonError(res, 400, 'rol o estado invalido.')
+      if (requestedRol && !ALLOWED_USER_ROLES.has(requestedRol)) {
+        jsonError(res, 400, 'rol invalido.')
         return
       }
 
@@ -2033,7 +2023,6 @@ export function createAdminApiApp({
       const esLider = roles.includes('lider')
       const esActivador = roles.includes('activador')
       const esFacturador = roles.includes('facturador')
-      const estado = requestedEstado || previousRow.estado || 'activo'
       const puedeActivar = rol === 'lider' && (
         req.body?.puede_activar === undefined
           ? previousRow.puede_activar === true
@@ -2042,15 +2031,6 @@ export function createAdminApiApp({
       let liderId = esActivador
         ? (req.body?.lider_id === undefined ? previousRow.lider_id : normalizeNullableText(req.body.lider_id))
         : null
-      const motivoInhabilitacion = req.body?.motivo_inhabilitacion === undefined
-        ? normalizeNullableText(previousRow.motivo_inhabilitacion)
-        : normalizeNullableText(req.body.motivo_inhabilitacion)
-
-      if (estado === 'inhabilitado' && !motivoInhabilitacion) {
-        jsonError(res, 400, 'El motivo de inhabilitacion es obligatorio.')
-        return
-      }
-
       let teamId = null
       let teamPlazaId = null
       if (esActivador) {
@@ -2121,13 +2101,8 @@ export function createAdminApiApp({
         nombre,
         plaza,
         rol,
-        estado,
         puede_activar: puedeActivar,
         lider_id: liderId,
-        inhabilitado_at: estado === 'inhabilitado'
-          ? previousRow.inhabilitado_at || new Date().toISOString()
-          : null,
-        motivo_inhabilitacion: estado === 'inhabilitado' ? motivoInhabilitacion : null,
       }
       if (esActivador && !teamId && req.body?.equipo_id === undefined) teamId = await resolveTeamIdForLeader(liderId, plaza)
       if (teamId) {
@@ -2272,33 +2247,55 @@ export function createAdminApiApp({
       const { userId } = req.params
       const estado = normalizeText(req.body?.estado)
       const motivo = normalizeNullableText(req.body?.motivo_inhabilitacion)
+      const habilitar = estado === 'activo'
 
       if (!ALLOWED_USER_STATES.has(estado)) {
         jsonError(res, 400, 'estado invalido.')
         return
       }
-      if (estado === 'inhabilitado' && !motivo) {
+      if (!habilitar && !motivo) {
         jsonError(res, 400, 'El motivo de inhabilitacion es obligatorio.')
         return
       }
 
+      const { data: perfil, error: perfilError } = await adminSupabase
+        .from('activadores').select('usuario_id,auth_user_id,estado,equipo_id').eq('usuario_id', userId).maybeSingle()
+      if (perfilError) { jsonError(res, 500, 'No se pudo leer el usuario.', perfilError.message); return }
+      if (!perfil) { jsonError(res, 404, 'No se encontro el usuario en activadores.'); return }
+      if (perfil.estado === estado) { jsonError(res, 409, habilitar ? 'El usuario ya esta activo.' : 'El usuario ya esta inhabilitado.'); return }
+      if (!perfil.auth_user_id) { jsonError(res, 409, 'El usuario no tiene cuenta de acceso; no se puede cambiar su estado.'); return }
+
       const payload = {
         estado,
-        inhabilitado_at: estado === 'inhabilitado' ? new Date().toISOString() : null,
-        motivo_inhabilitacion: estado === 'inhabilitado' ? motivo : null,
+        inhabilitado_at: habilitar ? null : new Date().toISOString(),
+        motivo_inhabilitacion: habilitar ? null : motivo,
       }
-      const { data, error } = await adminSupabase
-        .from('activadores')
-        .update(payload)
-        .eq('usuario_id', userId)
-        .select('usuario_id')
+      if (habilitar && perfil.equipo_id) {
+        const { data: equipo, error: equipoError } = await adminSupabase.from('equipos').select('activo').eq('id', perfil.equipo_id).maybeSingle()
+        if (equipoError) { jsonError(res, 500, 'No se pudo verificar el equipo del usuario.', equipoError.message); return }
+        if (!equipo?.activo) Object.assign(payload, { equipo_id: null, organizacion_pendiente: true })
+      }
+      if (!habilitar) {
+        const relaciones = await Promise.all([
+          adminSupabase.from('activadores').select('usuario_id', { count: 'exact', head: true }).eq('lider_id', userId).eq('estado', 'activo'),
+          adminSupabase.from('equipos').select('id', { count: 'exact', head: true }).eq('lider_actual_id', userId).eq('activo', true),
+        ])
+        const fallida = relaciones.find((item) => item.error)
+        if (fallida) { jsonError(res, 500, 'No se pudo verificar relaciones activas del usuario.', fallida.error.message); return }
+        if (relaciones.some((item) => (item.count ?? 0) > 0)) {
+          jsonError(res, 409, 'El usuario lidera equipos o activadores vigentes. Reasigne el liderazgo antes de inhabilitarlo.')
+          return
+        }
+      }
 
+      try { await cambiarAcceso(adminSupabase, perfil.auth_user_id, habilitar) }
+      catch (error) { jsonError(res, 500, error.message); return }
+
+      const { error } = await adminSupabase.from('activadores').update(payload).eq('usuario_id', userId)
       if (error) {
+        try { await cambiarAcceso(adminSupabase, perfil.auth_user_id, !habilitar) }
+        catch (rollbackError) { console.error('[admin-api] No se pudo revertir el acceso.', sanitizeLogDetails(rollbackError)) }
         jsonError(res, 500, 'No se pudo cambiar el estado del usuario.', error.message)
-        return
-      }
-      if (!data?.length) {
-        jsonError(res, 404, 'No se encontro el usuario en activadores.')
         return
       }
       res.json({ ok: true, ...payload })
@@ -2579,63 +2576,48 @@ export function createAdminApiApp({
     })
   )
 
+  app.get('/admin/users/:userId/eliminable', asyncRoute(async (req, res) => {
+    try { res.json({ eliminable: !(await tieneHistorial(adminSupabase, req.params.userId)) }) }
+    catch (error) { jsonError(res, 500, error.message) }
+  }))
+
   app.delete(
     '/admin/users/:userId',
     requireAdminReauthentication,
     asyncRoute(async (req, res) => {
       const { userId } = req.params
 
-      const { data: existingRow, error: existingErr } = await adminSupabase
-        .from('activadores')
-        .select('usuario_id, auth_user_id, email, nombre, estado, motivo_inhabilitacion')
-        .eq('usuario_id', userId)
-        .maybeSingle()
-
-      if (existingErr) {
-        jsonError(res, 500, existingErr.message)
-        return
-      }
-      if (!existingRow) { jsonError(res, 404, 'No se encontro el usuario en activadores.'); return }
-      if ((existingRow.estado ?? 'activo') !== 'inhabilitado') {
-        res.status(409).json({ ok: false, deleted: false, message: 'El usuario esta activo. Debe inhabilitarse antes de eliminar su cuenta de acceso.' })
+      const { data: perfil, error: perfilError } = await adminSupabase
+        .from('activadores').select('usuario_id,auth_user_id,estado').eq('usuario_id', userId).maybeSingle()
+      if (perfilError) { jsonError(res, 500, perfilError.message); return }
+      if (!perfil) { jsonError(res, 404, 'No se encontro el usuario en activadores.'); return }
+      if (perfil.estado !== 'inhabilitado') {
+        jsonError(res, 409, 'El usuario esta activo. Debe inhabilitarse antes de eliminarlo.')
         return
       }
 
-      const now = new Date().toISOString()
-      const checks = await Promise.all([
-        adminSupabase.from('activadores').select('usuario_id', { count: 'exact', head: true }).eq('lider_id', userId),
-        adminSupabase.from('equipos').select('id', { count: 'exact', head: true }).eq('lider_actual_id', userId),
-        adminSupabase.from('viajes').select('id', { count: 'exact', head: true }).eq('activador_id', userId).lte('inicio', now).gt('fin', now).is('cancelado_at', null),
-      ])
-      const failedCheck = checks.find((item) => item.error)
-      if (failedCheck) { jsonError(res, 500, 'No se pudo verificar relaciones activas del usuario.', failedCheck.error.message); return }
-      const [lideradosCount, equiposLideradosCount, viajesVigentesCount] = checks.map((item) => item.count ?? 0)
-      if (lideradosCount > 0) { res.status(409).json({ ok: false, deleted: false, message: 'No se puede eliminar la cuenta porque el usuario tiene activadores a su cargo. Reasignelos antes de continuar.' }); return }
-      if (equiposLideradosCount > 0) { res.status(409).json({ ok: false, deleted: false, message: 'No se puede eliminar la cuenta porque el usuario lidera equipos vigentes. Libere el liderazgo antes de continuar.' }); return }
-      if (viajesVigentesCount > 0) { res.status(409).json({ ok: false, deleted: false, message: 'No se puede eliminar la cuenta porque el usuario tiene un viaje vigente. Cancélelo antes de continuar.' }); return }
-
-      if (!existingRow.auth_user_id) {
-        res.json({ ok: true, deleted: true, authDeleted: false, cuentaAccesoEliminada: true, estado: 'inhabilitado', message: 'La cuenta de acceso ya estaba eliminada. El perfil y el historial se conservan como Inhabilitado.' })
+      let conHistorial
+      try { conHistorial = await tieneHistorial(adminSupabase, userId) }
+      catch (error) { jsonError(res, 500, error.message); return }
+      if (conHistorial) {
+        jsonError(res, 409, 'El usuario tiene historial (activaciones, equipos, viajes o eventos). Solo puede quedar inhabilitado.')
         return
       }
 
-      const { error: authDeleteError } = await adminSupabase.auth.admin.deleteUser(existingRow.auth_user_id)
-      if (authDeleteError) {
-        const alreadyMissing = /user not found/i.test(authDeleteError.message ?? '')
-        if (!alreadyMissing) { jsonError(res, 500, 'No se pudo eliminar la cuenta de acceso.', authDeleteError.message); return }
+      const { error: historialError } = await adminSupabase.from('activador_equipo_historial').delete().eq('activador_id', userId)
+      if (historialError) { jsonError(res, 500, 'No se pudo eliminar el usuario.', historialError.message); return }
+      const { error: perfilDeleteError } = await adminSupabase.from('activadores').delete().eq('usuario_id', userId)
+      if (perfilDeleteError) { jsonError(res, 500, 'No se pudo eliminar el usuario.', perfilDeleteError.message); return }
+
+      if (perfil.auth_user_id) {
+        const { error: authDeleteError } = await adminSupabase.auth.admin.deleteUser(perfil.auth_user_id)
+        if (authDeleteError && !/user not found/i.test(authDeleteError.message ?? '')) {
+          jsonError(res, 500, 'Se elimino el perfil, pero no la cuenta de acceso. Reintente o eliminela en Supabase Auth.', authDeleteError.message)
+          return
+        }
       }
 
-      const { data: profileAfter, error: profileAfterError } = await adminSupabase
-        .from('activadores')
-        .select('usuario_id, auth_user_id, estado')
-        .eq('usuario_id', userId)
-        .maybeSingle()
-      if (profileAfterError || !profileAfter) {
-        jsonError(res, 500, 'La cuenta se elimino pero no se pudo verificar el perfil historico.', profileAfterError?.message)
-        return
-      }
-
-      res.json({ ok: true, deleted: true, authDeleted: true, cuentaAccesoEliminada: profileAfter.auth_user_id == null, estado: 'inhabilitado', message: 'Cuenta de acceso eliminada permanentemente. El perfil y el historial se conservan como Inhabilitado.' })
+      res.json({ ok: true, message: 'Usuario eliminado.' })
     })
   )
 

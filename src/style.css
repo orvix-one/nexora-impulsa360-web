@@ -266,7 +266,7 @@ input[type='checkbox']:disabled {
 .view-page {
   display: grid;
   gap: 0.95rem;
-  animation: fade-in 0.35s ease-out both;
+  animation: fade-in 0.35s ease-out backwards;
 }
 
 .view-header {

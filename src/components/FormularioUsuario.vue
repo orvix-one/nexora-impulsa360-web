@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { apiRequest } from '../lib/api'
 import { notifyError, notifySuccess, notifyWarning } from '../lib/feedback'
 import {
@@ -36,7 +36,18 @@ const nuevaContrasena = ref('')
 const mostrarContrasena = ref(false)
 const guardandoContrasena = ref(false)
 const bloqueado = computed(() => guardando.value || guardandoContrasena.value || props.ocupado)
-const puedeCambiarContrasena = computed(() => !esNuevo && !props.usuario.cuenta_acceso_eliminada)
+const puedeCambiarContrasena = computed(() => !esNuevo && props.usuario.tiene_acceso)
+const eliminable = ref(false)
+
+onMounted(async () => {
+  if (esNuevo || estaActivo(props.usuario)) return
+  try {
+    const { eliminable: valor } = await apiRequest(`/admin/users/${props.usuario.usuario_id}/eliminable`)
+    eliminable.value = valor === true
+  } catch {
+    eliminable.value = false
+  }
+})
 const conOrganizacion = computed(() => props.organizacion.available)
 const opcionesEquipo = computed(() =>
   props.organizacion.equipos
@@ -110,6 +121,7 @@ async function guardar() {
 </script>
 
 <template>
+  <Teleport to="body">
   <div class="detalle-overlay" @click.self="emit('cerrar')">
     <aside
       class="detalle-activacion"
@@ -318,13 +330,13 @@ async function guardar() {
                 Activar
               </button>
               <button
-                v-if="!usuario.cuenta_acceso_eliminada"
+                v-if="eliminable"
                 type="button"
                 class="boton boton-eliminar"
                 :disabled="bloqueado"
                 @click="emit('eliminar', usuario)"
               >
-                Eliminar cuenta
+                Eliminar usuario
               </button>
             </template>
           </template>
@@ -343,4 +355,5 @@ async function guardar() {
       </form>
     </aside>
   </div>
+  </Teleport>
 </template>

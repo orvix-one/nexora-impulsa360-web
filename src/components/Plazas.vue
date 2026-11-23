@@ -121,6 +121,7 @@ onMounted(cargar)
       </table>
     </div>
 
+    <Teleport to="body">
     <div v-if="conversion" class="detalle-overlay" @click.self="conversion = null">
       <aside class="detalle-activacion" role="dialog" aria-modal="true" aria-label="Extraer plaza">
         <header class="detalle-header">
@@ -150,5 +151,6 @@ onMounted(cargar)
         </form>
       </aside>
     </div>
+    </Teleport>
   </div>
 </template>

@@ -197,12 +197,12 @@ async function activarUsuario(usuario) {
     procesando.value = false
   }
 }
-async function eliminarCuenta(usuario) {
+async function eliminarUsuario(usuario) {
   const password = await requestPasswordConfirmation({
-    title: 'Eliminar cuenta',
+    title: 'Eliminar usuario',
     message:
-      'Se eliminara permanentemente la cuenta de acceso de este usuario. El historial del usuario se conservara. Ingresa tu contrasena actual para confirmar.',
-    confirmLabel: 'Eliminar cuenta',
+      'Se eliminara permanentemente este usuario y su cuenta de acceso. Solo es posible porque no tiene historial. Ingresa tu contrasena actual para confirmar.',
+    confirmLabel: 'Eliminar usuario',
   })
   if (!password) return
   procesando.value = true
@@ -213,7 +213,7 @@ async function eliminarCuenta(usuario) {
     })
     formulario.value = null
     await cargarUsuarios()
-    notifySuccess(result.message ?? 'Cuenta de acceso eliminada correctamente.')
+    notifySuccess(result.message ?? 'Usuario eliminado.')
   } catch (error) {
     notifyError(
       error?.status === 409 && error.message && !error.message.startsWith('Error HTTP')
@@ -326,11 +326,7 @@ onMounted(cargarUsuarios)
                   v-if="!estaActivo(usuario)"
                   class="nota-inhabilitado"
                   :title="usuario.motivo_inhabilitacion || undefined"
-                  >{{
-                    usuario.cuenta_acceso_eliminada
-                      ? 'Inhabilitado · cuenta eliminada'
-                      : 'Inhabilitado'
-                  }}</small
+                  >Inhabilitado</small
                 >
               </td>
               <td>
@@ -375,7 +371,7 @@ onMounted(cargarUsuarios)
       @guardado="trasGuardar"
       @inhabilitar="abrirInhabilitacion"
       @activar="activarUsuario"
-      @eliminar="eliminarCuenta"
+      @eliminar="eliminarUsuario"
     />
 
     <teleport to="body">

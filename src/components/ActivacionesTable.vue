@@ -722,6 +722,7 @@ const exportarExcelYolopago = () => exportar('yolopago', async (ExcelJS, datos, 
     </div>
 
     <teleport to="body">
+      <Teleport to="body">
       <div v-if="activacionSeleccionada" class="detalle-overlay" @click.self="cerrarDetalle">
         <aside class="detalle-activacion" role="dialog" aria-modal="true" aria-label="Detalle de activacion">
           <header class="detalle-header">
@@ -782,6 +783,7 @@ const exportarExcelYolopago = () => exportar('yolopago', async (ExcelJS, datos, 
           </div>
         </aside>
       </div>
+      </Teleport>
     </teleport>
   </div>
 </template>
