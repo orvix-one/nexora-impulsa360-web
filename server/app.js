@@ -1829,53 +1829,6 @@ export function createAdminApiApp({
     res.json({ ok: true })
   }))
 
-  app.delete('/admin/plazas/:plazaId', requireAdminReauthentication, asyncRoute(async (req, res) => {
-    const plazaId = normalizeText(req.params.plazaId)
-    if (!plazaId) { jsonError(res, 400, 'Parametro plazaId requerido.'); return }
-
-    const { data: plaza, error: plazaErr } = await adminSupabase.from('plazas').select('*').eq('id', plazaId).maybeSingle()
-    if (plazaErr) { jsonError(res, 500, 'No se pudo leer la plaza.', plazaErr.message); return }
-    if (!plaza) { jsonError(res, 404, 'Plaza no encontrada.'); return }
-
-    try {
-      const relationChecks = await Promise.all([
-        adminSupabase.from('equipos').select('id', { count: 'exact', head: true }).eq('plaza_id', plazaId),
-        adminSupabase.from('activadores').select('usuario_id', { count: 'exact', head: true }).eq('plaza_id', plazaId),
-        adminSupabase.from('activaciones').select('id', { count: 'exact', head: true }).eq('plaza_id_registro', plazaId),
-        adminSupabase.from('activaciones').select('id', { count: 'exact', head: true }).eq('plaza_base_id_registro', plazaId),
-      ])
-
-      const failedCheck = relationChecks.find(({ error }) => error)
-      if (failedCheck) {
-        const err = failedCheck.error
-        jsonError(res, 500, 'No se pudo verificar relaciones de la plaza.', err?.message)
-        return
-      }
-
-      const hasRelations = relationChecks.some(({ count }) => (count ?? 0) > 0)
-
-      if (hasRelations) {
-        res.status(409).json({ ok: false, deleted: false, message: 'No se puede eliminar la plaza porque tiene información relacionada. Puedes desactivarla.' })
-        return
-      }
-
-      const { error: delErr } = await adminSupabase.from('plazas').delete().eq('id', plazaId)
-      if (delErr) { jsonError(res, 500, 'No se pudo eliminar la plaza.', delErr.message); return }
-      res.json({ ok: true, deleted: true, message: 'Plaza eliminada correctamente.' })
-    } catch (err) {
-      jsonError(res, 500, 'Error verificando relaciones de plaza.', err?.message ?? String(err))
-    }
-  }))
-
-  app.post('/admin/plazas/:plazaId/reassign-delete', requireAdminReauthentication, asyncRoute(async (req, res) => {
-    const plazaId = normalizeText(req.params.plazaId)
-    const destinoId = normalizeText(req.body?.destino_id)
-    if (!plazaId || !destinoId || plazaId === destinoId) { jsonError(res, 400, 'Plaza de destino invalida.'); return }
-    const { data, error } = await adminSupabase.rpc('reasignar_y_eliminar_plaza', { p_plaza_origen: plazaId, p_plaza_destino: destinoId })
-    if (error) { jsonError(res, error.code === 'P0001' || error.code === '23503' ? 409 : 500, error.code === 'P0001' || error.code === '23503' ? error.message : 'No se pudo reasignar y eliminar la plaza.', error.message); return }
-    res.json({ ok: true, deleted: true, reassigned: data, message: 'Relaciones operativas reasignadas y plaza eliminada.' })
-  }))
-
   app.delete('/admin/teams/:teamId', requireAdminReauthentication, asyncRoute(async (req, res) => {
     const teamId = normalizeText(req.params.teamId)
     if (!teamId) { jsonError(res, 400, 'Parametro teamId requerido.'); return }
@@ -1898,7 +1851,7 @@ export function createAdminApiApp({
     res.json({ ok: true, deleted: true, message: 'Equipo eliminado correctamente.' })
   }))
 
-  // Plazas: listar, crear, editar (activar/desactivar)
+  // Plazas: listar, editar (activar/desactivar)
   app.get('/admin/plazas', asyncRoute(async (_req, res) => {
     const { data, error } = await adminSupabase.from('plazas').select('id,nombre,nombre_normalizado,activa').order('nombre')
     if (error) {
@@ -1906,26 +1859,6 @@ export function createAdminApiApp({
       jsonError(res, 500, 'No se pudo obtener las plazas.', error.message); return
     }
     res.json({ plazas: data ?? [] })
-  }))
-
-  app.post('/admin/plazas', asyncRoute(async (req, res) => {
-    const nombre = normalizeText(req.body?.nombre)
-    if (!nombre) { jsonError(res, 400, 'Nombre de plaza requerido.'); return }
-    const nombre_normalizado = normalizeOrganizationName(nombre)
-    try {
-      const { data: existing, error: existingErr } = await adminSupabase.from('plazas').select('id').eq('nombre_normalizado', nombre_normalizado).maybeSingle()
-      if (existingErr) { throw existingErr }
-      if (existing) { jsonError(res, 409, 'Ya existe una plaza con ese nombre.'); return }
-      const { data: created, error: createErr } = await adminSupabase.from('plazas').insert({
-        nombre,
-        nombre_normalizado,
-      }).select('*').single()
-      if (createErr) { throw createErr }
-      res.status(201).json({ plaza: created })
-    } catch (err) {
-      if (isMissingOrganizationSchema(err)) { jsonError(res, 409, 'El modelo organizacional no esta habilitado.', err.message); return }
-      jsonError(res, 500, 'No se pudo crear la plaza.', err.message)
-    }
   }))
 
   app.patch('/admin/plazas/:plazaId', asyncRoute(async (req, res) => {
