@@ -3,7 +3,7 @@
 
 const PORTAL_PRIMARY_ROLES = ['lider', 'banco']
 const PROFILE_COLUMNS =
-  'usuario_id,auth_user_id,nombre,email,rol,estado,lider_id,puede_activar,activador_roles(rol)'
+  'usuario_id,auth_user_id,nombre,email,rol,estado,lider_id,activador_roles(rol)'
 
 /**
  * @typedef {object} PortalUser
@@ -14,7 +14,6 @@ const PROFILE_COLUMNS =
  * @property {string} rol Primary role.
  * @property {string} estado
  * @property {string | null} lider_id
- * @property {boolean} puede_activar
  * @property {string[]} roles Primary role plus every row in `activador_roles`.
  * @property {boolean} isAdmin True when `roles` includes `administrador`.
  */

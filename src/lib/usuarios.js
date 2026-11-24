@@ -2,6 +2,8 @@
 import { isValidEmail, normalizeEmail } from './textUtils.js'
 
 export const ROLES = ['activador', 'lider', 'facturador', 'administrador', 'banco']
+const ROLES_GLOBALES = ['administrador', 'banco']
+const ROLES_POR_EQUIPO = ['lider', 'activador', 'facturador']
 export const ESTADOS = ['activo', 'inhabilitado']
 
 const CONTRASENA_FUERTE = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{10,}$/
@@ -62,11 +64,11 @@ export function formularioVacio() {
     plaza: '',
     plaza_id: '',
     equipo_id: '',
+    equipos_activador: /** @type {string[]} */ ([]),
     equipo_ids: /** @type {string[]} */ ([]),
     facturador_equipo_ids: /** @type {string[]} */ ([]),
     roles: ['activador'],
     lider_id: '',
-    puede_activar: false,
   }
 }
 
@@ -86,6 +88,13 @@ export function formularioDesdeUsuario(usuario, equipos) {
     plaza: usuario.plaza_base ?? usuario.plaza ?? '',
     plaza_id: equipo?.plaza_id ?? '',
     equipo_id: usuario.equipo_id ?? '',
+    equipos_activador: Array.isArray(usuario.equipos)
+      ? usuario.equipos
+          .filter((/** @type {{ roles: string[] }} */ item) => item.roles.includes('activador'))
+          .map((/** @type {{ id: string }} */ item) => item.id)
+      : usuario.equipo_id
+        ? [usuario.equipo_id]
+        : [],
     equipo_ids: equipos
       .filter((item) => item.lider_actual_id === usuario.usuario_id)
       .map((item) => item.id),
@@ -93,7 +102,6 @@ export function formularioDesdeUsuario(usuario, equipos) {
       usuario.equipos_facturados?.map((/** @type {{ id: string }} */ item) => item.id) ?? [],
     roles: rolesUsuario(usuario),
     lider_id: usuario.lider_id ?? '',
-    puede_activar: usuario.puede_activar === true,
   }
 }
 
@@ -103,9 +111,36 @@ export function formularioDesdeUsuario(usuario, equipos) {
  */
 export function ajustarRoles(form) {
   if (!esRol(form, 'activador'))
-    Object.assign(form, { equipo_id: '', plaza_id: '', lider_id: '', plaza: '' })
-  if (!esRol(form, 'lider')) Object.assign(form, { equipo_ids: [], puede_activar: false })
+    Object.assign(form, { equipo_id: '', equipos_activador: [], plaza_id: '', lider_id: '', plaza: '' })
+  if (!esRol(form, 'lider')) form.equipo_ids = []
   if (!esRol(form, 'facturador')) form.facturador_equipo_ids = []
+}
+
+/**
+ * A leader activates by default: ticking Líder also ticks Activador.
+ * @param {FormularioUsuario} form
+ */
+export function marcarLider(form) {
+  if (esRol(form, 'lider') && !esRol(form, 'activador')) form.roles.push('activador')
+}
+
+/**
+ * Newly led teams become teams the leader activates in, when they are an activador.
+ * @param {FormularioUsuario} form
+ * @param {string[]} agregados
+ */
+export function sumarEquiposLiderados(form, agregados) {
+  if (!esRol(form, 'activador')) return
+  form.equipos_activador = [...new Set([...form.equipos_activador, ...agregados])]
+  fijarPrincipal(form)
+}
+
+/**
+ * The principal team is always one of the teams the activador works in.
+ * @param {FormularioUsuario} form
+ */
+export function fijarPrincipal(form) {
+  if (!form.equipos_activador.includes(form.equipo_id)) form.equipo_id = form.equipos_activador[0] ?? ''
 }
 
 /**
@@ -138,10 +173,12 @@ export function payloadUsuario(form, { organizacionDisponible, esNuevo }) {
     plaza: form.plaza?.trim() ?? '',
     roles: [...form.roles],
     lider_id: !organizacionDisponible && esRol(form, 'activador') ? form.lider_id || null : null,
-    puede_activar: esRol(form, 'lider') && form.puede_activar === true,
   }
   if (esNuevo) payload.password = form.password
-  if (organizacionDisponible && esRol(form, 'activador')) payload.equipo_id = form.equipo_id
+  if (organizacionDisponible && esRol(form, 'activador')) {
+    payload.equipo_id = form.equipo_id
+    payload.equipos_activador = [...form.equipos_activador]
+  }
   if (organizacionDisponible && esRol(form, 'lider')) payload.equipo_ids = form.equipo_ids ?? []
   if (organizacionDisponible && esRol(form, 'facturador'))
     payload.facturador_equipo_ids = form.facturador_equipo_ids ?? []
@@ -149,24 +186,36 @@ export function payloadUsuario(form, { organizacionDisponible, esNuevo }) {
 }
 
 /**
- * @param {any} usuario
- * @returns {string}
+ * @typedef {{ id: string, numero: number | string, plaza?: string | null, lider_nombre?: string | null, principal?: boolean, roles: string[] }} EquipoDeUsuario
+ * @typedef {{ rol: string, equipos: EquipoDeUsuario[] | null }} RolConEquipos
  */
-export function equiposDelUsuario(usuario) {
-  const esLider = esRol(usuario, 'lider')
-  const facturados = esRol(usuario, 'facturador') ? (usuario.equipos_facturados ?? []) : []
-  if (!esLider && !facturados.length)
-    return usuario.equipo_numero ? `#${usuario.equipo_numero}` : 'Sin equipo'
-  /** @type {{ id: string, numero: number | string }[]} */
-  const equipos = []
-  /** @param {{ id?: string, numero: number | string }} equipo */
-  const agregar = (equipo) => {
-    if (equipo?.id && !equipos.some((item) => item.id === equipo.id))
-      equipos.push({ id: equipo.id, numero: equipo.numero })
-  }
-  if (esLider) (usuario.equipos_asignados ?? []).forEach(agregar)
-  facturados.forEach(agregar)
-  if (!esLider && usuario.equipo_numero)
-    agregar({ id: usuario.equipo_id, numero: usuario.equipo_numero })
-  return equipos.length ? equipos.map((e) => `#${e.numero}`).join(', ') : 'Sin equipo'
+
+/**
+ * Global roles first (no teams), then each team role with the teams where the user holds it.
+ * @param {any} usuario
+ * @returns {RolConEquipos[]}
+ */
+export function rolesConEquipos(usuario) {
+  const roles = rolesUsuario(usuario)
+  /** @type {EquipoDeUsuario[]} */
+  const equipos = Array.isArray(usuario.equipos)
+    ? usuario.equipos
+    : usuario.equipo_numero
+      ? [{ id: usuario.equipo_id, numero: usuario.equipo_numero, principal: true, roles: ['activador'] }]
+      : []
+  return [
+    ...ROLES_GLOBALES.filter((rol) => roles.includes(rol)).map((rol) => ({ rol, equipos: null })),
+    ...ROLES_POR_EQUIPO.filter((rol) => roles.includes(rol)).map((rol) => ({
+      rol,
+      equipos: equipos.filter((equipo) => equipo.roles.includes(rol)),
+    })),
+  ]
+}
+
+/**
+ * @param {any} usuario
+ * @param {string} equipoId
+ */
+export function participaEnEquipo(usuario, equipoId) {
+  return rolesConEquipos(usuario).some((item) => item.equipos?.some((equipo) => equipo.id === equipoId))
 }

@@ -885,16 +885,26 @@ export function createAdminApiApp({
 
   async function enrichUsersWithOrganization(users) {
     if (!users.length) return users
-    const teamIds = [...new Set(users.map((user) => user.equipo_id).filter(Boolean))]
     const userIds = users.map((user) => user.usuario_id).filter(Boolean)
-    if (!teamIds.length && !userIds.length) return users
 
     try {
+      const { data: memberships, error: membershipsError } = userIds.length
+        ? await adminSupabase.from('activador_equipo_historial').select('activador_id,equipo_id')
+          .in('activador_id', userIds).is('fin', null)
+        : { data: [], error: null }
+      if (membershipsError) return users
+      const memberTeamsByUser = new Map()
+      for (const user of users) if (user.equipo_id) memberTeamsByUser.set(user.usuario_id, new Set([user.equipo_id]))
+      for (const row of memberships ?? []) {
+        if (!memberTeamsByUser.has(row.activador_id)) memberTeamsByUser.set(row.activador_id, new Set())
+        memberTeamsByUser.get(row.activador_id).add(row.equipo_id)
+      }
+      const teamIds = [...new Set([...memberTeamsByUser.values()].flatMap((ids) => [...ids]))]
       const now = new Date().toISOString()
       let [{ data: teams, error: teamsError }, { data: currentTrips, error: tripsError }] =
         await Promise.all([
           teamIds.length
-            ? adminSupabase.from('equipos').select('id,numero,nombre,facturador_id,lider_actual_id,plaza_id').in('id', teamIds)
+            ? adminSupabase.from('equipos').select('id,numero,nombre,facturador_id,lider_actual_id,plaza_id,activo').in('id', teamIds)
             : Promise.resolve({ data: [], error: null }),
           userIds.length
             ? adminSupabase.from('viajes').select('id,activador_id,municipio_id,inicio,fin')
@@ -969,6 +979,25 @@ export function createAdminApiApp({
           ? (teams ?? []).filter((item) => item.facturador_id === userBiller.id)
           : []
         const assignedBiller = billersById.get(assignedTeams[0]?.facturador_id)
+        const userTeams = new Map()
+        const addTeam = (item, rol) => {
+          if (!item) return
+          const entry = userTeams.get(item.id) ?? {
+            id: item.id,
+            numero: item.numero,
+            nombre: item.nombre,
+            plaza: plazasById.get(item.plaza_id)?.nombre ?? null,
+            activo: item.activo !== false,
+            principal: item.id === user.equipo_id,
+            lider_nombre: leadersById.get(item.lider_actual_id)?.nombre ?? null,
+            roles: [],
+          }
+          if (!entry.roles.includes(rol)) entry.roles.push(rol)
+          userTeams.set(item.id, entry)
+        }
+        for (const id of memberTeamsByUser.get(user.usuario_id) ?? []) addTeam(teamsById.get(id), 'activador')
+        assignedTeams.forEach((item) => addTeam(item, 'lider'))
+        billedUserTeams.forEach((item) => addTeam(item, 'facturador'))
         return {
           ...user,
           plaza_base: user.plaza_base ?? user.plaza ?? null,
@@ -992,6 +1021,7 @@ export function createAdminApiApp({
             plaza: plazasById.get(item.plaza_id)?.nombre ?? null,
             activo: item.activo,
           })),
+          equipos: [...userTeams.values()].sort((a, b) => Number(b.principal) - Number(a.principal) || Number(a.numero) - Number(b.numero)),
           lider_id: team?.lider_actual_id ?? user.lider_id ?? null,
           lider_nombre: leadersById.get(team?.lider_actual_id ?? user.lider_id)?.nombre ?? null,
           facturador_id: userBiller?.id ?? biller?.id ?? assignedBiller?.id ?? null,
@@ -1064,6 +1094,29 @@ export function createAdminApiApp({
       throw error
     }
     return { available: true }
+  }
+
+  async function syncActivadorTeams(userId, teamIds) {
+    const normalizedIds = [...new Set((teamIds ?? []).map(normalizeText).filter(Boolean))]
+    const { error } = await adminSupabase.rpc('asignar_equipos_activador', {
+      p_activador_id: userId,
+      p_equipo_ids: normalizedIds,
+      p_inicio: new Date().toISOString(),
+      p_motivo: 'Actualizacion administrativa de usuario',
+    })
+    if (error) throw error
+  }
+
+  async function discardCreatedUser(userId) {
+    await adminSupabase.from('activador_equipo_historial').delete().eq('activador_id', userId)
+    await adminSupabase.from('activadores').delete().eq('usuario_id', userId)
+    await adminSupabase.auth.admin.deleteUser(userId)
+  }
+
+  function activeTeamIdsOrNull(options, ids) {
+    const unique = [...new Set(ids.map(normalizeText).filter(Boolean))]
+    const valid = options.equipos.filter((team) => unique.includes(team.id) && team.activo)
+    return valid.length === unique.length ? unique : null
   }
 
   const app = express()
@@ -1339,7 +1392,9 @@ export function createAdminApiApp({
   }))
   app.get('/portal/users', asyncRoute(async (req, res) => {
     let query = adminSupabase.from('activadores').select('*').order('nombre')
-    if (!req.user.isAdmin && req.user.rol === 'lider') query = query.eq('lider_id', req.user.usuario_id)
+    const { alcance, error: alcanceError } = await resolverAlcanceLider(adminSupabase, req.user)
+    if (alcanceError) { jsonError(res, 500, 'No se pudo resolver el alcance del lider.', alcanceError.message); return }
+    if (alcance) query = query.in('usuario_id', alcance.userIds)
     if (!req.user.isAdmin && req.user.rol === 'banco') query = query.eq('rol', 'activador')
     const { data, error } = await query
     if (error) { jsonError(res, 500, 'No se pudo obtener usuarios.', error.message); return }
@@ -1489,6 +1544,7 @@ export function createAdminApiApp({
       const requestedTeamId = normalizeNullableText(req.body?.equipo_id)
       const requestedTeamIds = Array.isArray(req.body?.equipo_ids) ? req.body.equipo_ids : []
       const requestedBillerTeamIds = Array.isArray(req.body?.facturador_equipo_ids) ? req.body.facturador_equipo_ids : []
+      let memberTeamIds = Array.isArray(req.body?.equipos_activador) ? req.body.equipos_activador : []
       const rawNombre = req.body?.nombre
       const rawPlaza = req.body?.plaza
       let roleSelection
@@ -1498,7 +1554,6 @@ export function createAdminApiApp({
       const esLider = roles.includes('lider')
       const esActivador = roles.includes('activador')
       const esFacturador = roles.includes('facturador')
-      const puedeActivar = rol === 'lider' && req.body?.puede_activar === true
       let liderId = esActivador ? normalizeNullableText(req.body?.lider_id) : null
 
       const email = normalizeEmail(rawEmail)
@@ -1521,6 +1576,13 @@ export function createAdminApiApp({
           teamPlazaId = selectedTeam.plaza_id
           liderId = selectedTeam.lider_actual_id ?? null
           plaza = selectedPlaza.nombre
+        }
+        if (options.available) {
+          memberTeamIds = activeTeamIdsOrNull(options, memberTeamIds)
+          if (!memberTeamIds) {
+            jsonError(res, 400, 'Uno o mas equipos del activador no existen o estan inactivos.')
+            return
+          }
         }
       }
       if (esActivador && !teamId && req.body?.equipo_id === undefined) teamId = await resolveTeamIdForLeader(liderId, plaza)
@@ -1603,7 +1665,6 @@ export function createAdminApiApp({
         plaza,
         rol,
         estado: 'activo',
-        puede_activar: puedeActivar,
         lider_id: liderId,
       }
       if (esActivador && !teamId) insertedUser.organizacion_pendiente = true
@@ -1646,12 +1707,21 @@ export function createAdminApiApp({
         return
       }
 
+      if (esActivador && teamId) {
+        try {
+          await syncActivadorTeams(created.user.id, memberTeamIds)
+        } catch (error) {
+          await discardCreatedUser(created.user.id)
+          jsonError(res, 409, 'No se pudieron asignar los equipos al activador.', error?.message)
+          return
+        }
+      }
+
       if (esLider && leaderOrganizationAvailable) {
         try {
           await syncLeaderTeams(created.user.id, requestedTeamIds)
         } catch (error) {
-          await adminSupabase.from('activadores').delete().eq('usuario_id', created.user.id)
-          await adminSupabase.auth.admin.deleteUser(created.user.id)
+          await discardCreatedUser(created.user.id)
           jsonError(res, 409, 'No se pudieron asignar los equipos al lider.', error?.message)
           return
         }
@@ -1661,8 +1731,7 @@ export function createAdminApiApp({
         try {
           await syncFacturadorTeams(created.user.id, nombre, requestedBillerTeamIds, true)
         } catch (error) {
-          await adminSupabase.from('activadores').delete().eq('usuario_id', created.user.id)
-          await adminSupabase.auth.admin.deleteUser(created.user.id)
+          await discardCreatedUser(created.user.id)
           jsonError(res, 409, 'No se pudieron asignar los equipos al facturador.', error?.message)
           return
         }
@@ -1728,8 +1797,8 @@ export function createAdminApiApp({
   app.get('/admin/teams', asyncRoute(async (_req, res) => {
     const options = await loadOrganizationOptions()
     if (!options.available) { res.json(options); return }
-    const { data: members, error } = await adminSupabase.from('activadores')
-      .select('usuario_id,equipo_id').eq('rol', 'activador')
+    const { data: members, error } = await adminSupabase.from('activador_equipo_historial')
+      .select('activador_id,equipo_id').is('fin', null)
     if (error && !isMissingOrganizationSchema(error)) {
       jsonError(res, 500, 'No se pudo contar los integrantes.', error.message)
       return
@@ -1741,11 +1810,15 @@ export function createAdminApiApp({
 
   app.get('/admin/teams/:teamId', asyncRoute(async (req, res) => {
     const teamId = normalizeText(req.params.teamId)
-    const [{ data: members, error: membersError }, { data: history, error: historyError }] = await Promise.all([
-      adminSupabase.from('activadores').select('usuario_id,nombre,email,estado,plaza,plaza_base').eq('equipo_id', teamId).eq('rol', 'activador').order('nombre'),
+    const [{ data: memberships, error: membershipsError }, { data: history, error: historyError }] = await Promise.all([
+      adminSupabase.from('activador_equipo_historial').select('activador_id').eq('equipo_id', teamId).is('fin', null),
       adminSupabase.from('equipo_lider_historial').select('id,lider_id,inicio,fin,motivo').eq('equipo_id', teamId).order('inicio', { ascending: false }),
     ])
-    const schemaError = membersError || historyError
+    const memberIds = (memberships ?? []).map((item) => item.activador_id)
+    const { data: members, error: membersError } = memberIds.length && !membershipsError
+      ? await adminSupabase.from('activadores').select('usuario_id,nombre,email,estado,plaza,plaza_base').in('usuario_id', memberIds).order('nombre')
+      : { data: [], error: null }
+    const schemaError = membershipsError || membersError || historyError
     if (schemaError) {
       if (isMissingOrganizationSchema(schemaError)) {
         res.json({ available: false, message: 'El detalle de equipos estara disponible despues de habilitar el modelo organizacional.', integrantes: [], historial: [] })
@@ -1888,6 +1961,7 @@ export function createAdminApiApp({
       const requestedTeamId = normalizeNullableText(req.body?.equipo_id)
       const requestedTeamIds = Array.isArray(req.body?.equipo_ids) ? req.body.equipo_ids : []
       const requestedBillerTeamIds = Array.isArray(req.body?.facturador_equipo_ids) ? req.body.facturador_equipo_ids : []
+      let memberTeamIds = Array.isArray(req.body?.equipos_activador) ? req.body.equipos_activador : null
       const requestedRol = normalizeText(req.body?.rol)
 
       const nombre = normalizeText(rawNombre)
@@ -1951,11 +2025,6 @@ export function createAdminApiApp({
       const esLider = roles.includes('lider')
       const esActivador = roles.includes('activador')
       const esFacturador = roles.includes('facturador')
-      const puedeActivar = rol === 'lider' && (
-        req.body?.puede_activar === undefined
-          ? previousRow.puede_activar === true
-          : req.body.puede_activar === true
-      )
       let liderId = esActivador
         ? (req.body?.lider_id === undefined ? previousRow.lider_id : normalizeNullableText(req.body.lider_id))
         : null
@@ -1974,6 +2043,13 @@ export function createAdminApiApp({
           teamPlazaId = selectedTeam.plaza_id
           liderId = selectedTeam.lider_actual_id ?? null
           plaza = selectedPlaza.nombre
+        }
+        if (options.available && memberTeamIds) {
+          memberTeamIds = activeTeamIdsOrNull(options, memberTeamIds)
+          if (!memberTeamIds) {
+            jsonError(res, 409, 'Uno o mas equipos del activador no existen o estan inactivos.')
+            return
+          }
         }
       }
 
@@ -2029,7 +2105,6 @@ export function createAdminApiApp({
         nombre,
         plaza,
         rol,
-        puede_activar: puedeActivar,
         lider_id: liderId,
       }
       if (esActivador && !teamId && req.body?.equipo_id === undefined) teamId = await resolveTeamIdForLeader(liderId, plaza)
@@ -2070,7 +2145,6 @@ export function createAdminApiApp({
             email: previousRow.email ?? null,
             rol: previousRow.rol,
             estado: previousRow.estado,
-            puede_activar: previousRow.puede_activar,
             lider_id: previousRow.lider_id,
             inhabilitado_at: previousRow.inhabilitado_at,
             motivo_inhabilitacion: previousRow.motivo_inhabilitacion,
@@ -2138,6 +2212,18 @@ export function createAdminApiApp({
           [updateAuthErr.message, ...rollbackErrors].join('; ')
         )
         return
+      }
+
+      const hadActivadorRole = previousRoles.length ? previousRoles.includes('activador') : previousRow.rol === 'activador'
+      if (esActivador ? memberTeamIds : hadActivadorRole) {
+        try {
+          await syncActivadorTeams(userId, esActivador && teamId ? memberTeamIds : [])
+        } catch (error) {
+          if (!isMissingOrganizationSchema(error)) {
+            jsonError(res, 409, 'El usuario se actualizo, pero no se pudieron actualizar sus equipos de activador.', error?.message)
+            return
+          }
+        }
       }
 
       if (shouldSyncLeaderTeams) {

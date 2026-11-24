@@ -656,6 +656,42 @@ button:disabled,
   border-bottom: none;
 }
 
+.roles-equipos {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.25rem;
+}
+
+.roles-equipos li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.roles-equipos-rol {
+  min-width: 6.5rem;
+  font-weight: 600;
+}
+
+.chip-equipo {
+  padding: 0.05rem 0.45rem;
+  border: 1px solid var(--ru-border);
+  border-radius: 999px;
+  background: var(--ru-surface-soft);
+  color: var(--ru-ink);
+  font-size: 0.75rem;
+  cursor: help;
+}
+
+.chip-equipo-principal {
+  border-color: var(--ru-primary);
+  color: var(--ru-primary-strong);
+  font-weight: 600;
+}
+
 .link-foto {
   display: inline-flex;
   align-items: center;

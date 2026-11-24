@@ -79,8 +79,8 @@ Todos los requieren Bearer de adminstrador:
 - `GET /healthz`
 - `GET /admin/healthz`
 - `GET /admin/users`
-- `POST /admin/users`
-- `PATCH /admin/users/:userId`: acepta `email` opcional
+- `POST /admin/users`: `equipo_id` (principal) y `equipos_activador` (todos los equipos donde activa)
+- `PATCH /admin/users/:userId`: acepta `email` opcional, `equipo_id` y `equipos_activador`
 - `POST /admin/users/:userId/reset-password`
 - `PATCH /admin/users/:userId/status`: bloquea/desbloquea la cuenta de acceso)
 - `GET /admin/users/:userId/eliminable`

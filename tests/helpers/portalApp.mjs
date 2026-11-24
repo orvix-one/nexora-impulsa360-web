@@ -19,7 +19,6 @@ const perfil = (usuario_id, rol, extra = {}) => ({
   rol,
   estado: 'activo',
   lider_id: null,
-  puede_activar: false,
   ...extra,
 })
 

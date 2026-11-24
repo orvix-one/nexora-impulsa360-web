@@ -201,6 +201,7 @@ test('el helper de alcance deriva el equipo actual y el lider autenticado, sin e
   const alcanceSource = readFileSync(new URL('../server/alcanceLider.js', import.meta.url), 'utf8')
   const funcion = alcanceSource.slice(alcanceSource.indexOf('export async function resolverAlcanceLider'))
   assert.match(funcion, /\.from\('activadores'\)\.select\('usuario_id'\)\.eq\('lider_id', user\.usuario_id\)/)
+  assert.match(funcion, /\.from\('activador_equipo_historial'\)\.select\('activador_id'\)\.in\('equipo_id', equipoIds\)\.is\('fin', null\)/)
   assert.match(funcion, /liderId: user\.usuario_id/)
   assert.doesNotMatch(funcion, /estado/)
 })

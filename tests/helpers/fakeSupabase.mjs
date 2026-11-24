@@ -98,6 +98,11 @@ class Query {
     this.predicates.push((row) => values.includes(row[column]))
     return this
   }
+  is(column, value) {
+    if (value !== null) throw new Error(`fakeSupabase: is(${value}) no soportado`)
+    this.predicates.push((row) => row[column] == null)
+    return this
+  }
   gte(column, value) {
     this.predicates.push((row) => row[column] != null && row[column] >= value)
     return this

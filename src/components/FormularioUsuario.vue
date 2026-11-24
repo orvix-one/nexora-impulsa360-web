@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { apiRequest } from '../lib/api'
 import { notifyError, notifySuccess, notifyWarning } from '../lib/feedback'
 import {
@@ -7,10 +7,13 @@ import {
   esRol,
   estaActivo,
   etiqueta,
+  fijarPrincipal,
   formularioDesdeUsuario,
   formularioVacio,
+  marcarLider,
   payloadUsuario,
   ROLES,
+  sumarEquiposLiderados,
   validarContrasena,
   validarFormulario,
 } from '../lib/usuarios'
@@ -59,9 +62,23 @@ const opcionesEquipo = computed(() =>
     })),
 )
 
-function elegirPlaza() {
-  form.value.equipo_id = ''
-  form.value.plaza = props.plazas.find((item) => item.id === form.value.plaza_id)?.nombre ?? ''
+const equiposActivador = computed(() =>
+  opcionesEquipo.value.filter((equipo) => form.value.equipos_activador.includes(equipo.id)),
+)
+
+watch(
+  () => [...form.value.equipo_ids],
+  (actuales, previos) => sumarEquiposLiderados(form.value, actuales.filter((id) => !previos.includes(id))),
+)
+
+watch(
+  () => [...form.value.equipos_activador],
+  () => fijarPrincipal(form.value),
+)
+
+function cambiarRol(rol, marcado) {
+  if (rol === 'lider' && marcado) marcarLider(form.value)
+  ajustarRoles(form.value)
 }
 
 function mensajeDeError(error) {
@@ -179,7 +196,7 @@ async function guardar() {
                 v-model="form.roles"
                 type="checkbox"
                 :value="rol"
-                @change="ajustarRoles(form)"
+                @change="cambiarRol(rol, $event.target.checked)"
               />
               {{ etiqueta(rol) }}
             </label>
@@ -188,25 +205,29 @@ async function guardar() {
         <section v-if="esRol(form, 'activador')" class="detalle-section formulario-campos">
           <h4>Activador</h4>
           <template v-if="conOrganizacion">
-            <label>
-              <span class="field-label">Plaza base</span>
-              <select v-model="form.plaza_id" class="input-texto" @change="elegirPlaza">
-                <option value="">Sin plaza</option>
-                <option v-for="plaza in plazas" :key="plaza.id" :value="plaza.id">
-                  {{ plaza.nombre }}
-                </option>
-              </select>
-            </label>
-            <label>
-              <span class="field-label">Equipo</span>
+            <span class="field-label">Equipos donde activa</span>
+            <SelectorActivadores
+              v-model="form.equipos_activador"
+              :opciones="opcionesEquipo"
+              placeholder="Buscar equipo"
+            />
+            <small v-if="!form.equipos_activador.length" class="viaje-nota"
+              >Sin equipo: queda con organización pendiente.</small
+            >
+            <label v-if="equiposActivador.length > 1">
+              <span class="field-label">Equipo principal</span>
               <select v-model="form.equipo_id" class="input-texto">
-                <option value="">Sin equipo (asignar después)</option>
-                <option v-for="equipo in opcionesEquipo" :key="equipo.id" :value="equipo.id">
+                <option v-for="equipo in equiposActivador" :key="equipo.id" :value="equipo.id">
                   {{ equipo.nombre }} · {{ equipo.detalle }}
                 </option>
               </select>
-              <small class="viaje-nota">Líder: {{ liderPorEquipo(form.equipo_id) }}</small>
+              <small class="viaje-nota"
+                >Se usa por defecto en la app. Líder: {{ liderPorEquipo(form.equipo_id) }}</small
+              >
             </label>
+            <small v-else-if="form.equipo_id" class="viaje-nota"
+              >Líder: {{ liderPorEquipo(form.equipo_id) }}</small
+            >
           </template>
           <template v-else>
             <label>
@@ -225,13 +246,7 @@ async function guardar() {
           </template>
         </section>
         <section v-if="esRol(form, 'lider')" class="detalle-section formulario-campos">
-          <div class="toolbar-line">
-            <h4>Líder</h4>
-            <label class="interruptor">
-              <input v-model="form.puede_activar" type="checkbox" role="switch" />
-              Puede activar
-            </label>
-          </div>
+          <h4>Líder</h4>
           <template v-if="conOrganizacion">
             <span class="field-label">Equipos liderados (opcional)</span>
             <SelectorActivadores

@@ -12,12 +12,12 @@ import {
 import { containsNormalized, contarRegistros } from '../lib/textUtils'
 import { deduplicarPlazas, deduplicarPlazasCatalogo, mismaPlaza } from '../lib/plazas'
 import {
-  equiposDelUsuario,
   esRol,
   estaActivo,
   ESTADOS,
   etiqueta,
-  rolesUsuario,
+  participaEnEquipo,
+  rolesConEquipos,
   ROLES,
 } from '../lib/usuarios'
 import FormularioUsuario from '../components/FormularioUsuario.vue'
@@ -69,16 +69,16 @@ const usuariosFiltrados = computed(() =>
   usuarios.value.filter((u) => {
     const coincideBusqueda =
       containsNormalized(u.nombre, busqueda.value) || containsNormalized(u.email, busqueda.value)
-    const coincideEquipo =
-      !filtroEquipoId.value ||
-      u.equipo_id === filtroEquipoId.value ||
-      u.equipos_asignados?.some((equipo) => equipo.id === filtroEquipoId.value) ||
-      u.equipos_facturados?.some((equipo) => equipo.id === filtroEquipoId.value)
+    const coincideEquipo = !filtroEquipoId.value || participaEnEquipo(u, filtroEquipoId.value)
+    const coincidePlaza =
+      !filtroPlaza.value ||
+      mismaPlaza(plazaDe(u), filtroPlaza.value) ||
+      (u.equipos ?? []).some((equipo) => mismaPlaza(equipo.plaza, filtroPlaza.value))
     return (
       coincideBusqueda &&
       (!filtroRol.value || esRol(u, filtroRol.value)) &&
       (!filtroEstado.value || (u.estado ?? 'activo') === filtroEstado.value) &&
-      (!filtroPlaza.value || mismaPlaza(plazaDe(u), filtroPlaza.value)) &&
+      coincidePlaza &&
       coincideEquipo
     )
   }),
@@ -90,10 +90,10 @@ function getErrorMessage(error) {
 function plazaDe(usuario) {
   return usuario.plaza_nombre || usuario.plaza_base || usuario.plaza
 }
-function nombreLider(usuario) {
-  return usuario.lider_id
-    ? (usuariosPorId.value[usuario.lider_id]?.nombre ?? 'Líder no disponible')
-    : '—'
+function detalleEquipo(equipo) {
+  return [equipo.plaza, equipo.lider_nombre ? `Líder: ${equipo.lider_nombre}` : 'Sin líder']
+    .filter(Boolean)
+    .join(' · ')
 }
 function liderPorEquipo(equipoId) {
   const equipo = organizacion.value.equipos.find((item) => item.id === equipoId)
@@ -302,10 +302,6 @@ onMounted(cargarUsuarios)
             <tr>
               <th>Usuario</th>
               <th>Roles</th>
-              <th>Plaza base</th>
-              <th>Equipo</th>
-              <th>Líder</th>
-              <th>Facturador</th>
             </tr>
           </thead>
           <tbody>
@@ -322,23 +318,6 @@ onMounted(cargarUsuarios)
                   >Organización pendiente</span
                 >
                 <small class="viaje-nota">{{ usuario.email || 'Sin correo' }}</small>
-                <small
-                  v-if="!estaActivo(usuario)"
-                  class="nota-inhabilitado"
-                  :title="usuario.motivo_inhabilitacion || undefined"
-                  >Inhabilitado</small
-                >
-              </td>
-              <td>
-                {{ rolesUsuario(usuario).map(etiqueta).join(', ') }}
-                <small
-                  v-if="esRol(usuario, 'lider') && usuario.puede_activar === true"
-                  class="viaje-nota"
-                  >Puede activar</small
-                >
-              </td>
-              <td>
-                {{ plazaDe(usuario) || '—' }}
                 <router-link
                   v-if="usuario.viaje_vigente"
                   to="/viajes"
@@ -348,10 +327,31 @@ onMounted(cargarUsuarios)
                   De viaje · {{ usuario.viaje_vigente.destino }} hasta
                   {{ fechaCorta(usuario.viaje_vigente.fin) }}
                 </router-link>
+                <small
+                  v-if="!estaActivo(usuario)"
+                  class="nota-inhabilitado"
+                  :title="usuario.motivo_inhabilitacion || undefined"
+                  >Inhabilitado</small
+                >
               </td>
-              <td>{{ equiposDelUsuario(usuario) }}</td>
-              <td>{{ nombreLider(usuario) }}</td>
-              <td>{{ usuario.facturador_nombre || '—' }}</td>
+              <td>
+                <ul class="roles-equipos">
+                  <li v-for="grupo in rolesConEquipos(usuario)" :key="grupo.rol">
+                    <span class="roles-equipos-rol">{{ etiqueta(grupo.rol) }}</span>
+                    <template v-if="grupo.equipos">
+                      <span
+                        v-for="equipo in grupo.equipos"
+                        :key="equipo.id"
+                        class="chip-equipo"
+                        :class="{ 'chip-equipo-principal': grupo.rol === 'activador' && equipo.principal }"
+                        :title="detalleEquipo(equipo)"
+                        >#{{ equipo.numero }}</span
+                      >
+                      <span v-if="!grupo.equipos.length" class="viaje-nota">Sin equipo</span>
+                    </template>
+                  </li>
+                </ul>
+              </td>
             </tr>
           </tbody>
         </table>

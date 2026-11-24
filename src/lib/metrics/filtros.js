@@ -190,13 +190,29 @@ export function coincideFiltros(fecha, claves, filtros) {
   return true
 }
 
+/**
+ * Teams where the user activates; falls back to the single equipo_id of older payloads.
+ * @param {any} usuario
+ * @returns {{ id: string, numero?: unknown, nombre?: unknown }[]}
+ */
+function equiposDondeActiva(usuario) {
+  if (Array.isArray(usuario.equipos))
+    return usuario.equipos
+      .filter((/** @type {{ roles?: string[] }} */ equipo) => equipo.roles?.includes('activador'))
+      .map((/** @type {{ id: string, numero?: unknown, nombre?: unknown }} */ equipo) => ({
+        id: texto(equipo.id).toLowerCase(),
+        numero: equipo.numero,
+        nombre: equipo.nombre,
+      }))
+  const id = texto(usuario.equipo_id).toLowerCase()
+  return id ? [{ id, numero: usuario.equipo_numero, nombre: usuario.equipo_nombre }] : []
+}
+
 /** @param {Contexto} ctx @param {Filtros} filtros */
 function integrantesEquipo(ctx, filtros) {
   if (!filtros.equipo) return []
   return ctx.catalogoActivadores.filter((usuario) => {
-    const equipoId = texto(usuario.equipo_id).toLowerCase()
-    if (!equipoId) return false
-    if (`id:${equipoId}` !== filtros.equipo) return false
+    if (!equiposDondeActiva(usuario).some((equipo) => `id:${equipo.id}` === filtros.equipo)) return false
     return !filtros.lider || liderKey(usuario, ctx) === filtros.lider
   })
 }
@@ -241,14 +257,13 @@ export function construirOpciones(ctx) {
     if (!equipos.has(key)) equipos.set(key, { key, nombre: equipoEtiqueta(item, key, ctx) })
   }
   for (const usuario of ctx.catalogoActivadores) {
-    const id = texto(usuario.equipo_id).toLowerCase()
-    if (!id) continue
-    const key = `id:${id}`
-    if (!equipos.has(key)) {
+    for (const equipo of equiposDondeActiva(usuario)) {
+      const key = `id:${equipo.id}`
+      if (equipos.has(key)) continue
       const sintetico = {
-        equipo_id_registro: id,
-        equipo_numero_registro: usuario.equipo_numero,
-        equipo_nombre_registro: usuario.equipo_nombre,
+        equipo_id_registro: equipo.id,
+        equipo_numero_registro: equipo.numero,
+        equipo_nombre_registro: equipo.nombre,
       }
       equipos.set(key, { key, nombre: equipoEtiqueta(sintetico, key, ctx) })
     }
